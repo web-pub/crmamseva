@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRMAmseva — Espace Travailleur</title>
+<link rel="icon" href="assets/logo-crmamseva.svg">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <button class="home-icon-btn" title="Accueil du site" onclick="window.location.href='index.html'">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+      </button>
+    </div>
+
+    <div class="site-title">CRMAmseva</div>
+    <span class="role-badge travailleur">Travailleur</span>
+    <div class="version-tag">V01-008</div>
+
+    <!-- Accès volontairement limité : uniquement pointage et stock -->
+    <nav class="nav-group">
+      <div class="nav-item active" data-view="pointage"><span class="dot"></span> Mon pointage</div>
+      <div class="nav-item" data-view="stock-travailleur"><span class="dot"></span> Stock</div>
+    </nav>
+    <div style="flex:1;"></div>
+    <div class="nav-item" id="btn-logout" style="margin-top:16px; border-top:1px solid #33383A; padding-top:16px;"><span class="dot"></span> Se déconnecter</div>
+  </aside>
+
+  <main class="main-content">
+
+    <!-- ===== Vue Pointage ===== -->
+    <section id="view-pointage">
+      <div class="page-header">
+        <div>
+          <h1>Mon pointage</h1>
+          <div class="subtitle">Heures passées sur les projets</div>
+        </div>
+      </div>
+
+      <div class="panel-form" style="margin-bottom:28px;">
+        <h2>Nouveau pointage</h2>
+        <div class="field">
+          <label class="field-required" for="pt-projet">Projet / offre</label>
+          <select id="pt-projet"></select>
+        </div>
+        <div class="field">
+          <label class="field-required" for="pt-date">Date</label>
+          <input type="date" id="pt-date">
+        </div>
+        <div class="field">
+          <label class="field-required" for="pt-heures">Heures passées</label>
+          <input type="number" id="pt-heures" step="0.25" min="0.25" placeholder="ex. 2.5">
+        </div>
+        <div class="field">
+          <label for="pt-description">Description (optionnel)</label>
+          <textarea id="pt-description" placeholder="Tâche réalisée..."></textarea>
+        </div>
+        <button class="btn btn-primary" id="btn-save-pointage">Enregistrer mon pointage</button>
+      </div>
+
+      <h2 style="font-size:16px; margin-bottom:12px;">Mes derniers pointages</h2>
+      <table class="data-table" id="pointages-table">
+        <thead>
+          <tr><th>Date</th><th>Projet</th><th>Heures</th><th>Description</th><th>Statut</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- ===== Vue Stock (accès restreint) ===== -->
+    <section id="view-stock-travailleur" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Stock</h1>
+          <div class="subtitle">Consulter les quantités disponibles et prendre des pièces si besoin</div>
+        </div>
+      </div>
+
+      <table class="data-table" id="stock-travailleur-table">
+        <thead>
+          <tr><th>Référence</th><th>Désignation</th><th>Qté disponible</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="panel-form" id="form-take-stock" style="display:none; margin-top:20px;">
+        <h2>Prendre du stock — <span id="take-stock-article"></span></h2>
+        <div class="field">
+          <label class="field-required" for="take-qte">Quantité prélevée</label>
+          <input type="number" id="take-qte" min="1" value="1">
+        </div>
+        <div class="field">
+          <label class="field-required" for="take-projet">Pour quel projet ?</label>
+          <select id="take-projet"></select>
+        </div>
+        <button class="btn btn-primary" id="btn-confirm-take">Confirmer la prise</button>
+        <button class="btn btn-secondary" id="btn-cancel-take">Annuler</button>
+      </div>
+      <p class="required-note" id="take-stock-status" style="margin-top:12px;"></p>
+    </section>
+
+  </main>
+</div>
+
+<script src="js/travailleur.js"></script>
+</body>
+</html>

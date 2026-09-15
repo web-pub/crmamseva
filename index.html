@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRMAmseva — Connexion</title>
+<link rel="icon" href="assets/logo-crmamseva.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+</head>
+<body>
+
+<div class="auth-shell">
+
+  <div class="auth-card">
+    <div class="brand-mark">
+      <img src="assets/logo-crmamseva.svg" alt="" width="32" height="32">
+      <div class="wordmark">CRM<strong>Amseva</strong></div>
+    </div>
+
+    <h1>Connexion</h1>
+    <p class="auth-subtitle">Espace membre — accès réservé aux utilisateurs enregistrés.</p>
+
+    <form id="login-form">
+      <div class="field">
+        <label for="login-email">Adresse email</label>
+        <input type="email" id="login-email" name="email" required autocomplete="username">
+      </div>
+
+      <div class="field password-field">
+        <label for="login-password">Mot de passe</label>
+        <input type="password" id="login-password" name="password" required autocomplete="current-password">
+        <button type="button" class="toggle-eye" aria-label="Afficher le mot de passe" data-target="login-password">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;">Se connecter</button>
+    </form>
+
+    <div class="divider-block">
+      <h2>Pas encore membre ? Devenez membre !</h2>
+      <p>Complétez cette fiche rapide, un administrateur validera votre accès.</p>
+
+      <form id="signup-form">
+        <div class="field">
+          <label class="field-required" for="su-nom">Nom</label>
+          <input type="text" id="su-nom" required>
+        </div>
+        <div class="field">
+          <label class="field-required" for="su-prenom">Prénom</label>
+          <input type="text" id="su-prenom" required>
+        </div>
+        <div class="field">
+          <label class="field-required" for="su-gsm">GSM</label>
+          <input type="tel" id="su-gsm" required>
+        </div>
+        <div class="field">
+          <label class="field-required" for="su-email">Email</label>
+          <input type="email" id="su-email" required>
+        </div>
+        <p class="required-note">* Champs obligatoires</p>
+        <button type="submit" class="btn btn-secondary" style="width:100%;">Envoyer ma demande</button>
+      </form>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="legal-links">
+      <a href="/legal/securisation.html">Sécurisation</a><span class="sep">|</span>
+      <a href="/legal/confidentialite.html">Déclaration de confidentialité</a><span class="sep">|</span>
+      <a href="/legal/ethique.html">Business Ethics &amp; Governance</a><span class="sep">|</span>
+      <a href="/legal/cookies.html">Politique en matière de cookies</a><span class="sep">|</span>
+      <a href="/legal/responsabilite.html">Limitation de responsabilité</a><span class="sep">|</span>
+      <a href="/legal/mentions.html">Mentions légales / RGPD / CGV</a>
+    </div>
+    <div class="copyright-block">
+      <p>© 2026 Hélène Laruelle — Tous droits réservés. Toute copie du site ou de son code est interdite.</p>
+      <p>Site développé par Hélène Laruelle.</p>
+      <p>Contenu sous la responsabilité de Hélène Laruelle</p>
+    </div>
+  </footer>
+
+  <img src="assets/hl-logo.svg" alt="HL" class="hl-logo">
+</div>
+
+<script src="js/auth.js"></script>
+</body>
+</html>
