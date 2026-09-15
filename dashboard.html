@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRMAmseva — Tableau de bord</title>
+<link rel="icon" href="assets/logo-crmamseva.svg">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
+<script src="js/firebase-config.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <button class="home-icon-btn" title="Accueil du site" onclick="window.location.href='index.html'">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+      </button>
+    </div>
+
+    <div class="site-title">CRMAmseva</div>
+    <span class="role-badge super-admin" id="role-badge">Super Admin</span>
+    <div class="version-tag">V01-008</div>
+
+    <nav class="nav-group">
+      <div class="nav-item active" data-view="pipeline"><span class="dot"></span> Offres &amp; Pipeline</div>
+      <div class="nav-item" data-view="prospects"><span class="dot"></span> Prospects</div>
+      <div class="nav-item" data-view="devis"><span class="dot"></span> Devis</div>
+      <div class="nav-item" data-view="factures"><span class="dot"></span> Factures</div>
+      <div class="nav-item" data-view="stock"><span class="dot"></span> Stock</div>
+      <div class="nav-item" data-view="rappels"><span class="dot"></span> Rappels</div>
+      <div class="nav-item" data-view="admin"><span class="dot"></span> Administration</div>
+    </nav>
+    <div style="flex:1;"></div>
+    <div class="nav-item" id="btn-logout" style="margin-top:16px; border-top:1px solid #33383A; padding-top:16px;"><span class="dot"></span> Se déconnecter</div>
+  </aside>
+
+  <main class="main-content">
+
+    <!-- ===== Vue Pipeline ===== -->
+    <section id="view-pipeline">
+      <div class="page-header">
+        <div>
+          <h1>Offres &amp; pipeline</h1>
+          <div class="subtitle">Du prospect à la facture — relances automatiques entre chaque étape</div>
+        </div>
+        <button class="btn btn-primary">+ Nouvelle offre</button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card highlight">
+          <div class="stat-label">Rappels en retard</div>
+          <div class="stat-value">3</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Offres en cours</div>
+          <div class="stat-value">12</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Devis envoyés</div>
+          <div class="stat-value">7</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Clients actifs</div>
+          <div class="stat-value">24</div>
+        </div>
+      </div>
+
+      <div class="pipeline" id="pipeline-board">
+        <!-- généré par app.js -->
+      </div>
+    </section>
+
+    <!-- ===== Vue Prospects ===== -->
+    <section id="view-prospects" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Prospects &amp; clients</h1>
+          <div class="subtitle">Toutes les fiches contact</div>
+        </div>
+        <button class="btn btn-primary">+ Nouveau prospect</button>
+      </div>
+      <table class="data-table" id="prospects-table">
+        <thead>
+          <tr><th>Nom</th><th>Type</th><th>Email</th><th>Téléphone</th><th>Statut</th><th>Responsable</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- ===== Vue Stock ===== -->
+    <section id="view-stock" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Stock</h1>
+          <div class="subtitle">Articles, quantités et mouvements</div>
+        </div>
+        <button class="btn btn-primary">+ Nouvel article</button>
+      </div>
+      <table class="data-table" id="stock-table">
+        <thead>
+          <tr><th>Référence</th><th>Désignation</th><th>Qté en stock</th><th>Seuil alerte</th><th>Statut</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- ===== Vue Devis ===== -->
+    <section id="view-devis" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Devis</h1>
+          <div class="subtitle">Plusieurs devis peuvent répondre à une même offre</div>
+        </div>
+        <button class="btn btn-primary" id="btn-new-devis">+ Nouveau devis</button>
+      </div>
+
+      <table class="data-table" id="devis-table">
+        <thead>
+          <tr><th>Référence</th><th>Offre liée</th><th>Client / prospect</th><th>Émis le</th><th>Total TTC</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="panel-form" id="form-new-devis" style="display:none;">
+        <h2>Nouveau devis</h2>
+        <div class="field">
+          <label class="field-required" for="devis-offre">Offre liée</label>
+          <select id="devis-offre"></select>
+        </div>
+        <div class="field">
+          <label class="field-required" for="devis-reference">Référence du devis</label>
+          <input type="text" id="devis-reference" placeholder="ex. OFF-2026-015-B">
+        </div>
+        <div class="field">
+          <label for="devis-montant">Montant TTC (€)</label>
+          <input type="number" id="devis-montant" step="0.01">
+        </div>
+        <div class="field">
+          <label for="devis-doc-note">Documentation technique (note libre)</label>
+          <textarea id="devis-doc-note" placeholder="Note technique libre"></textarea>
+          <p class="required-note">Fichiers joints temporairement désactivés (Firebase Storage non activé).</p>
+        </div>
+        <button class="btn btn-primary" id="btn-save-devis">Enregistrer le devis</button>
+        <button class="btn btn-secondary" id="btn-cancel-devis">Annuler</button>
+      </div>
+    </section>
+
+    <!-- ===== Vue Factures ===== -->
+    <section id="view-factures" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Factures</h1>
+          <div class="subtitle">Générées depuis un devis accepté — export vers BOB</div>
+        </div>
+        <button class="btn btn-primary" id="btn-export-bob">⬇ Exporter le CSV BOB</button>
+      </div>
+
+      <table class="data-table" id="factures-table">
+        <thead>
+          <tr><th>N° facture</th><th>Client</th><th>Date</th><th>Échéance</th><th>Total TTC</th><th>Paiement</th><th>Export BOB</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="required-note" id="export-status" style="margin-top:12px;"></p>
+    </section>
+
+    <!-- ===== Vue Rappels ===== -->
+    <section id="view-rappels" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Rappels</h1>
+          <div class="subtitle">Relances automatiques entre chaque étape — email + notification</div>
+        </div>
+      </div>
+
+      <table class="data-table" id="rappels-table">
+        <thead>
+          <tr><th>Type</th><th>Concerne</th><th>Destinataire</th><th>Déclenché le</th><th>Canal</th><th>Statut</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="panel-form" style="margin-top:28px;">
+        <h2>Délais de relance par étape</h2>
+        <p class="auth-subtitle" style="margin-bottom:16px;">Nombre de jours sans mouvement avant déclenchement d'un rappel (Super Admin).</p>
+        <div id="delays-config"></div>
+      </div>
+    </section>
+
+    <!-- ===== Vue Administration ===== -->
+    <section id="view-admin" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Administration</h1>
+          <div class="subtitle">Utilisateurs, contenu du site, sécurité</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab-item active" data-tab="tab-users">Utilisateurs</div>
+        <div class="tab-item" data-tab="tab-content">Contenu du site</div>
+        <div class="tab-item" data-tab="tab-passwords">Mots de passe (Super Admin)</div>
+      </div>
+
+      <div id="tab-users" class="tab-panel">
+        <div class="page-header" style="margin-top:20px;">
+          <div class="subtitle">Créer un compte génère automatiquement un identifiant et un mot de passe suggérés, modifiables avant l'enregistrement.</div>
+          <button class="btn btn-primary" id="btn-new-user">+ Nouvel utilisateur</button>
+        </div>
+        <table class="data-table" id="users-table">
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Email</th><th>Statut</th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="panel-form" id="form-new-user" style="display:none; margin-top:20px;">
+          <h2>Nouvel utilisateur</h2>
+          <div class="field"><label class="field-required" for="user-prenom">Prénom</label><input type="text" id="user-prenom"></div>
+          <div class="field"><label class="field-required" for="user-nom">Nom</label><input type="text" id="user-nom"></div>
+          <div class="field"><label class="field-required" for="user-naissance">Date de naissance</label><input type="date" id="user-naissance"></div>
+          <div class="field"><label for="user-role">Rôle</label>
+            <select id="user-role"><option value="travailleur">Travailleur</option><option value="membre">Membre</option><option value="admin">Admin</option><option value="superadmin">Super Admin</option></select>
+          </div>
+          <div class="field"><label>Identifiant suggéré</label><input type="text" id="user-identifiant"></div>
+          <div class="field password-field"><label>Mot de passe suggéré</label>
+            <input type="password" id="user-password">
+            <button type="button" class="toggle-eye" data-target="user-password" aria-label="Afficher le mot de passe">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <button class="btn btn-primary" id="btn-save-user">Enregistrer</button>
+          <button class="btn btn-secondary" id="btn-cancel-user">Annuler</button>
+        </div>
+      </div>
+
+      <div id="tab-content" class="tab-panel" style="display:none;">
+        <p class="subtitle" style="margin:20px 0;">Textes des pages publiques — modifiables ici, aucun contenu n'est figé dans le code.</p>
+        <div class="field"><label>Titre de la page de connexion</label><input type="text" value="Connexion"></div>
+        <div class="field"><label>Message d'accueil "Devenez membre"</label><textarea>Complétez cette fiche rapide, un administrateur validera votre accès.</textarea></div>
+        <button class="btn btn-primary">Enregistrer le contenu</button>
+      </div>
+
+      <div id="tab-passwords" class="tab-panel" style="display:none;">
+        <p class="required-note" style="margin:20px 0; color:var(--clay);">Visible uniquement par le Super Admin — Firebase Authentication reste le mécanisme d'authentification réel ; cet onglet stocke une copie en clair à titre de confort, selon la préférence validée.</p>
+        <table class="data-table" id="passwords-table">
+          <thead><tr><th>Utilisateur</th><th>Identifiant</th><th>Mot de passe</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
