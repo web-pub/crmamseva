@@ -1,0 +1,35 @@
+// ============================================================
+// Projet : CRMAmseva
+// Version : V01-008
+// Règles Storage — fichiers de documentation technique
+// (prospects, offres, devis). Accès réservé aux utilisateurs
+// connectés (hors travailleurs), écriture réservée Admin/Super Admin.
+// ============================================================
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getRole() {
+      return firestore.get(/databases/(default)/documents/utilisateurs/$(request.auth.uid)).data.role;
+    }
+
+    function isAdminOrAbove() {
+      return isSignedIn() && (getRole() == "superadmin" || getRole() == "admin");
+    }
+
+    function isTravailleur() {
+      return isSignedIn() && getRole() == "travailleur";
+    }
+
+    match /documentation/{fichierId} {
+      allow read: if isSignedIn() && !isTravailleur();
+      allow write: if isAdminOrAbove();
+    }
+  }
+}
