@@ -1,0 +1,8 @@
+<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg">
+  <!-- Chemin prospect -> devis -> facture, sous forme de tracé passant par 3 points -->
+  <path d="M5 27 C 10 27, 12 16, 18 16 C 24 16, 26 9, 31 9"
+        fill="none" stroke="#C1832F" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="5" cy="27" r="3.4" fill="#1A1D1F"/>
+  <circle cx="18" cy="16" r="3.4" fill="#2E4E3F"/>
+  <circle cx="31" cy="9" r="3.4" fill="#C1832F"/>
+</svg>
