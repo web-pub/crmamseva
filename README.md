@@ -1,6 +1,81 @@
-# CRMAmseva — V01-015
+# CRMAmseva — V01-023
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
+
+## 🌐 Portail client (nouveau)
+
+Décisions confirmées par Hélène : **pas de multi-sociétés**, **portail client construit**, **Lead Mining écarté** (nécessite un abonnement séparé à une base de données d'entreprises tierce — pas pertinent pour une clientèle locale).
+
+- Nouveau fichier **`portail-client.html`** (+ `assets/portail-client.js`) : espace séparé pour les clients, avec sa propre navigation (Mes devis & offres, Mes factures, Contacter AM Seva)
+- **Créé depuis Prospects** : bouton "Donner accès" sur une fiche client → crée le compte (email + mot de passe) et le rattache à cette fiche, sans déconnecter l'admin (même mécanisme d'app Firebase secondaire que pour les comptes internes)
+- Le client voit le statut de ses offres, peut **accepter un devis en ligne** (confirmation par saisie de son nom — pas une vraie signature électronique), voit et **imprime/exporte en PDF ses factures** (via l'impression du navigateur — pas de génération PDF serveur pour l'instant), et peut **envoyer un message** à AM Seva
+- **Sécurité vérifiée côté Firestore** (`estClientDe()`), pas seulement dans l'interface : un client ne peut pas voir les données d'un autre client
+
+## Phase 4 : marketing, scoring, reporting
+
+- **Marketing** : les leads ont désormais un **medium** (site web, réseaux sociaux, publicité, salon, recommandation...) et une **campagne**, en plus de la source déjà existante
+- **Score des leads** : badge coloré (vert/bleu/beige) dans la vue Leads — **heuristique simple** (email + téléphone + contact renseignés, qualité du medium, activités terminées), **pas un vrai scoring prédictif** — voir la note dans `SCHEMA.md`
+- **Nouvelle vue "Reporting"** : pipeline total et revenu pondéré (nécessite de renseigner "Montant estimé" et "Probabilité" à la création d'une offre), leads par source, performance par commercial (nb leads, taux de conversion, offres gagnées, CA gagné) — tout est calculé côté client à partir des données déjà filtrées par ta portée d'accès, donc un Commercial voit ses propres chiffres, un Manager ceux de son équipe
+
+**C'est la 4ème et dernière phase du cahier des charges initial d'Hélène.** Tout ce qui était jugé prioritaire (droits par enregistrement, Lead/Opportunité, équipes, attribution automatique, activités/relances, marketing/scoring/reporting) est maintenant en place, sur la base des 4 phases validées. Le multi-sociétés, le portail client en libre-service et le Lead Mining restent de côté (mis en pause, pas confirmés utiles pour AM Seva).
+
+## Phases précédentes
+
+- **Nouvelle vue "Activités"** : appels, emails, réunions, tâches — liées (optionnellement) à un Lead ou une Offre, avec échéance et statut à faire/fait
+- **Plans d'activités** (Administration > Plans d'activités, Admin/Super Admin) : séquences-modèles du type "Jour 0 → email, Jour 2 → appel, Jour 5 → email, Jour 10 → relance, Jour 20 → dernier appel" — une étape par ligne (`jour;type;titre`)
+- **Bouton "Appliquer un plan"** sur chaque lead (vue Leads) : génère en une fois toutes les activités du plan, avec les bonnes échéances, héritant automatiquement des responsables du lead
+- Les activités en retard (échéance passée, non faites) sont signalées visuellement
+
+## 🎯 Phases précédentes
+
+- **Un prospect/client (et donc une offre, un devis, un lead) peut maintenant être attribué à plusieurs commerciaux** : les champs `responsableUid`/`equipeId` deviennent des tableaux `responsablesUids`/`equipeIds`. Dans les formulaires de création, le champ "Responsable" est un multi-sélecteur (Ctrl/Cmd + clic pour en choisir plusieurs)
+- **Les Factures n'existaient encore nulle part** (seul l'export CSV existait, sans création) : ajout d'un bouton **"Générer facture"** sur un devis accepté (réservé à Admin/Super Admin/Direction). La facture hérite des responsables du devis
+- **Un Commercial voit désormais ses propres factures** (lecture uniquement — la création/modification du statut de paiement et l'export BOB restent réservés à Admin/Super Admin/Direction)
+
+## 🎯 Phase 2 du cahier des charges : Lead/Opportunité + équipes + attribution automatique
+
+- **Nouvelle vue "Leads"** : un lead est un contact **pas encore qualifié** (nom, contact, source, description), distinct d'une opportunité (`offre`). Bouton **"Convertir en opportunité"** : crée automatiquement le prospect + l'offre correspondants, étape "Nouveau"
+- **Équipes** : pas de nouvelle collection à gérer — une équipe, c'est simplement l'ensemble des Commerciaux/Managers qui partagent le même nom d'équipe (`equipeId`, toujours singulier côté utilisateur). La liste des équipes est calculée à la volée
+- **Attribution automatique** : à la création d'un lead, en cochant la case (activée par défaut), tu choisis juste l'équipe — le système attribue au commercial de cette équipe qui a le moins de leads ouverts. Répartition simple par charge, pas encore de règles avancées (zone, secteur...)
+
+## 🔐 Phase 1 : modèle de droits par enregistrement
+
+Hélène a fourni un cahier des charges complet inspiré du fonctionnement d'Odoo CRM. Découpé en 4 phases ; Phases 1 et 2 livrées dans cette version.
+
+**Nouveaux rôles** : `commercial`, `manager`, `direction` (en plus de superadmin/admin/travailleur existants).
+
+- **Commercial** : ne voit et ne modifie que **ses propres** prospects/offres/devis (`responsableUid`)
+- **Manager** : voit et modifie les dossiers de **son équipe** (`equipeId`, texte libre partagé avec ses commerciaux)
+- **Direction** : voit et modifie **tout** côté commercial, mais ne gère pas les utilisateurs/la configuration
+- **Admin/Super Admin** : inchangés, accès complet
+
+C'est vérifié **côté Firestore** (`firestore.rules`), pas seulement dans l'interface : même en trafiquant les requêtes depuis le navigateur, un Commercial ne peut pas lire les dossiers d'un collègue.
+
+**Nouveau aussi** : les formulaires "+ Nouveau prospect" et "+ Nouvelle offre" (jusqu'ici des boutons sans action) créent maintenant réellement les fiches, avec attribution d'un responsable. Un badge "Vue globale / Vue équipe / Vue personnelle" apparaît en haut des pages Pipeline et Prospects pour que chacun sache ce qu'il regarde.
+
+**Limites connues de cette phase** (à revoir en Phase 2+ si besoin) :
+- Les Factures restent réservées à Admin/Super Admin/Direction (pas de portée équipe/perso sur la facturation pour l'instant)
+- Pas encore d'écran de gestion des équipes : le nom d'équipe est un simple champ texte à saisir identiquement pour un Manager et ses Commerciaux
+
+## Cahier des charges initial : statut
+
+Les 4 phases sont livrées. Décisions prises sur les points en suspens : **pas de multi-sociétés**, **portail client construit** (voir plus haut), **Lead Mining écarté**.
+
+## 👥 Gestion des accès (création de compte automatique)
+
+Il n'y a plus de "demande de compte" en libre-service. C'est toi (Admin/Super Admin) qui crées directement chaque compte depuis **Administration > Utilisateurs > + Nouvel utilisateur** :
+
+- Le compte **Firebase Authentication** est créé automatiquement (email + mot de passe que tu choisis)
+- La fiche **Firestore `utilisateurs/{uid}`** est créée automatiquement dans la foulée, avec le rôle et — pour un travailleur — les **modules autorisés**
+- **Plus aucune étape manuelle dans la console Firebase**
+
+Techniquement, la création utilise une "app Firebase secondaire" temporaire : créer un compte directement sur l'app principale t'aurait déconnectée de ta propre session (comportement normal du SDK Firebase), donc le code passe par une seconde instance jetable qui n'affecte pas ta connexion.
+
+### Modules modulables par travailleur
+
+Chaque travailleur a maintenant une liste de modules autorisés (`pointage`, `stock`) — pas un accès figé. Dans Administration > Utilisateurs, une case à cocher par module et par personne permet d'activer/désactiver l'accès à tout moment. L'espace Travailleur n'affiche plus que les onglets autorisés, et les règles Firestore vérifient aussi ces modules côté serveur (pas seulement côté interface).
+
+La page de connexion affiche maintenant une simple phrase : *"Pas encore de compte ? Demande ton accès à Hélène Laruelle (administratrice)."* — plus de formulaire d'auto-inscription.
 
 ## 📦 Structure de cette livraison — un seul niveau, comme ton site du club canin
 
@@ -55,14 +130,6 @@ Ce n'est plus une démo : `index.html`, `dashboard.html` et `espace-travailleur.
 - Bouton **Se déconnecter** ajouté dans les deux barres latérales
 - Le lien de démo vers l'espace Travailleur a été retiré de la page de connexion (le vrai routage par rôle le remplace)
 
-### ⚠️ Point important : création de nouveaux utilisateurs
-
-Créer un compte Firebase Authentication depuis le navigateur déconnecterait automatiquement la personne qui crée le compte (c'est une limitation du SDK client, pas un bug). En attendant une Cloud Function dédiée (prochaine étape), le formulaire "Nouvel utilisateur" :
-1. Génère l'identifiant et le mot de passe suggérés
-2. Enregistre ces informations dans `utilisateurs_en_attente` (visible dans Administration > Utilisateurs)
-3. **Toi (Super Admin)** crées alors le compte manuellement dans Console Firebase > Authentication avec cet email/mot de passe, récupères l'UID généré, et crées la fiche `utilisateurs/{cetUID}` avec le rôle voulu
-4. Tu supprimes ensuite la ligne "en attente"
-
 ## Comment tester dès maintenant
 
 1. Dans Firebase Console > Authentication, tu as déjà créé ton premier compte (voir étapes précédentes)
@@ -75,7 +142,7 @@ Créer un compte Firebase Authentication depuis le navigateur déconnecterait au
 
 ## Ce qui reste à faire (prochaines étapes)
 
-1. Cloud Function pour la création sécurisée de comptes (Auth + fiche Firestore en une fois)
+1. ~~Cloud Function pour la création sécurisée de comptes~~ — fait via l'app Firebase secondaire (voir plus haut)
 2. Formulaires de création pour Prospects, Offres et Articles de stock (actuellement seuls Devis, Pointages et prise de Stock écrivent réellement — les boutons "+ Nouveau/Nouvel..." restants n'ont pas encore d'action câblée)
 3. Envoi des fichiers de documentation technique vers Firebase Storage (le champ existe, l'upload réel reste à faire)
 4. Générer les PDF de devis/factures

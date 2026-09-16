@@ -27,13 +27,14 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge travailleur">Travailleur</span>
-    <div class="version-tag">V01-015</div>
+    <div class="version-tag">V01-023</div>
 
     <!-- Accès volontairement limité : uniquement pointage et stock -->
-    <nav class="nav-group">
-      <div class="nav-item active" data-view="pointage"><span class="dot"></span> Mon pointage</div>
-      <div class="nav-item" data-view="stock-travailleur"><span class="dot"></span> Stock</div>
+    <nav class="nav-group" id="travailleur-nav">
+      <div class="nav-item active" data-view="pointage" data-module="pointage"><span class="dot"></span> Mon pointage</div>
+      <div class="nav-item" data-view="stock-travailleur" data-module="stock"><span class="dot"></span> Stock</div>
     </nav>
+    <p class="required-note" id="no-module-msg" style="display:none; padding:0 10px;">Aucun accès activé pour ton compte. Demande à un administrateur de t'attribuer un module.</p>
     <div style="flex:1;"></div>
     <div class="nav-item" id="btn-logout" style="margin-top:16px; border-top:1px solid #33383A; padding-top:16px;"><span class="dot"></span> Se déconnecter</div>
   </aside>

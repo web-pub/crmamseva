@@ -1,14 +1,45 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-015
+Version : V01-023
+
+## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
+
+Hélène a fourni un cahier des charges détaillé (cycle Prospect→Lead→Qualification→Opportunité→Devis→Commande→Client, équipes, attribution automatique, scoring, marketing, reporting avancé...). Vu l'ampleur, c'est découpé en phases, dans cet ordre validé :
+
+1. **✅ Modèle de droits par enregistrement** — Commercial voit ses dossiers, Manager voit son équipe, Direction voit tout
+2. **✅ Lead/Opportunité + équipes + attribution automatique**
+3. **✅ Activités & séquences de relance automatisées**
+4. **✅ Marketing + scoring + reporting avancé** (cette version)
+
+## 📊 Reporting & scoring — comment ça marche
+
+- **Reporting** : calculé **côté client**, à partir des données déjà chargées par l'utilisateur connecté (donc déjà filtrées par sa portée — perso/équipe/globale). Pas de collection séparée à maintenir : KPI (pipeline total, revenu pondéré, taux de conversion), répartition par source, performance par commercial.
+- **Revenu pondéré** = somme de `montantEstime × probabilite` sur les offres ouvertes (champs à saisir à la création d'une offre).
+- **Score des leads** : **heuristique simple à base de règles** (présence email/téléphone/contact, qualité du medium, nombre d'activités terminées) — **pas un vrai scoring prédictif/machine learning**. Recalculé à l'affichage (`calculerScoreLead()` dans `assets/app.js`), rien n'est stocké. À améliorer plus tard avec des données réelles de conversion si besoin.
+
+
+**Décisions confirmées par Hélène** : pas de multi-sociétés (AM Seva reste une société unique) ; **portail client construit** (voir ci-dessous) ; Lead Mining écarté (nécessite un abonnement à une base de données d'entreprises tierce, payant séparément — pas pertinent pour une clientèle locale).
+
+## Portail client
+
+Séparé des comptes internes (comme la distinction Odoo "utilisateurs internes" / "utilisateurs portail") : un client se connecte sur la même page (`index.html`), mais atterrit sur `portail-client.html`, une interface à part qui ne montre QUE ses propres données.
+
+- **Créé manuellement par un Admin/Super Admin** depuis Prospects > bouton "Donner accès" (sur une fiche client) — même mécanisme d'app Firebase secondaire que pour les comptes internes, pour ne pas déconnecter l'admin
+- Le client voit : ses offres (étape du pipeline), ses devis (avec bouton **"Accepter"** — confirmation par saisie de son nom, stocké dans `acceptationClient`), ses factures (avec impression/export PDF via le navigateur — pas de génération PDF serveur pour l'instant), et peut envoyer des **messages** à AM Seva
+- **Sécurité** : vérifiée côté Firestore (`estClientDe()` dans `firestore.rules`), pas seulement dans l'interface — un client ne peut techniquement pas lire les données d'un autre client, même en modifiant les requêtes
 
 ## Rôles utilisateurs
 
-| Rôle | Accès |
-|---|---|
-| `superadmin` | Accès complet + onglet mots de passe en clair |
-| `admin` | Accès complet à la gestion (hors mots de passe en clair) |
-| `travailleur` | **Accès restreint** : uniquement son pointage d'heures et la consultation/prise de stock. Aucun accès aux prospects, offres, devis, factures ni aux autres utilisateurs — voir `espace-travailleur.html` (interface séparée du tableau de bord principal) |
+| Rôle | Accès aux données commerciales (prospects/offres/devis) | Autres accès |
+|---|---|---|
+| `superadmin` | Tout | + onglet mots de passe en clair, gestion complète |
+| `admin` | Tout | Gestion complète (hors mots de passe en clair) |
+| `direction` | Tout (lecture/écriture) | Pas de gestion des utilisateurs/config technique |
+| `manager` | Dossiers de **son équipe** (`equipeIds` contient son équipe) | — |
+| `commercial` | **Dossiers dont il est l'un des responsables** (`responsablesUids`) | — |
+| `travailleur` | Aucun | Pointage + Stock uniquement (modules modulables), interface séparée `espace-travailleur.html` |
+
+**Comment ça marche techniquement** : chaque lead/prospect/offre/devis/facture porte un `responsablesUids` (array — **un dossier peut être attribué à plusieurs commerciaux**) et un `equipeIds` (array, dénormalisé depuis les fiches des responsables, pour que le Manager puisse filtrer par équipe sans requête complexe). Les règles Firestore (`firestore.rules`) vérifient ce filtrage côté serveur — **pas seulement côté interface** — et les requêtes côté client (`avecPortee()` dans `assets/app.js`) doivent inclure un `where()` correspondant (`array-contains`), sinon Firestore refuse la requête de liste entière (limitation normale de Firestore avec des règles basées sur `resource.data`).
 
 ## Collections principales
 
@@ -17,18 +48,57 @@ Version : V01-015
 |---|---|---|
 | nom, prenom | string | |
 | email | string | |
-| role | string | `superadmin` \| `admin` \| `travailleur` |
+| role | string | `superadmin` \| `admin` \| `direction` \| `manager` \| `commercial` \| `travailleur` |
 | motDePasseClair | string | **Super Admin uniquement** — visible dans un onglet dédié, conformément à la préférence acceptée par Hélène (Firebase Auth reste le système d'authentification réel) |
 | identifiant | string | ex. `helene.l` |
+| modulesAutorises | array\<string\> | **Rôle travailleur uniquement.** Modules activés, ex. `["pointage", "stock"]`. Modifiable à tout moment depuis Administration > Utilisateurs |
+| equipeId | string | **Rôles commercial/manager uniquement.** Nom d'équipe en texte libre — un Manager et ses Commerciaux doivent porter exactement le même nom pour que le filtrage fonctionne |
 | dateCreation | timestamp | |
 
-### `demandes_acces/{id}`
-Formulaire "Demande ton accès travailleur" de la page de connexion.
-| Champ | Type |
-|---|---|
-| nom, prenom, gsm, email | string |
-| statut | `en_attente` \| `validee` \| `refusee` |
-| dateCreation | timestamp |
+Il n'y a plus de demande d'accès en libre-service : c'est l'Admin/Super Admin qui crée directement chaque compte (Auth + fiche Firestore) depuis Administration > Utilisateurs. Techniquement, la création du compte Firebase Authentication passe par une **app Firebase secondaire** temporaire (voir `creerCompteAuth()` dans `assets/app.js`), pour éviter que l'admin ne soit déconnecté de sa propre session pendant l'opération.
+
+### `activites/{id}`
+Appel, email, réunion, tâche ou activité personnalisée, liée (optionnellement) à un lead ou une offre — création manuelle ou générée en masse par un plan d'activités.
+| Champ | Type | Notes |
+|---|---|---|
+| type | string | `appel` \| `email` \| `reunion` \| `tache` \| `personnalisee` |
+| titre | string | |
+| dateEcheance | timestamp | |
+| statut | `a_faire` \| `fait` | |
+| cibleType | string | `lead` \| `offre` \| null |
+| cibleId | string | |
+| responsablesUids, equipeIds | array | même modèle de droits que le reste — héritées de la cible (lead/offre) à la création |
+| source | string | site web, salon, recommandation... |
+| medium | string | site_web \| reseaux_sociaux \| publicite \| email \| salon \| recommandation \| telephone \| autre |
+| campagne | string | texte libre, ex. "Campagne Juin 2026" |
+
+### `plans_activites/{id}`
+Modèle de séquence d'activités réutilisable (ex. "Prospection standard" : Jour 0 → email, Jour 2 → appel, Jour 5 → email, Jour 10 → relance, Jour 20 → dernier appel). Géré dans Administration > Plans d'activités (Admin/Super Admin), applicable par n'importe quel rôle commercial depuis la vue Leads (bouton "Appliquer un plan").
+| Champ | Type | Notes |
+|---|---|---|
+| nom | string | |
+| etapes | array<map> | `{jour: number, type: string, titre: string}` — `jour` = nombre de jours après l'application du plan |
+
+Appliquer un plan sur un lead/une offre crée en une fois (batch) une `activites` par étape, avec `dateEcheance = maintenant + jour`, en héritant des `responsablesUids`/`equipeIds` de la cible.
+
+### `leads/{id}`
+Contact commercial **pas encore qualifié** — étape intermédiaire avant la création d'un prospect + d'une opportunité (offre). Distinction Lead/Opportunité demandée par Hélène (Phase 2 du cahier des charges).
+| Champ | Type | Notes |
+|---|---|---|
+| nom | string | nom / entreprise |
+| contact, email, telephone | string | |
+| source | string | site web, salon, recommandation... |
+| description | string | besoin exprimé |
+| responsablesUids, equipeIds | array | même logique de portée que prospects/offres — attribués manuellement ou **automatiquement** (voir ci-dessous) |
+| statut | `nouveau` \| `qualifie` \| `converti` \| `perdu` | |
+| prospectId | string | rempli à la conversion |
+| dateCreation | timestamp | |
+
+**Attribution automatique** : à la création, si l'option est cochée, le système choisit — au sein de l'équipe sélectionnée — le commercial ayant le moins de leads ouverts (`nouveau`/`qualifie`) parmi ceux affichés dans son équipe (voir `commercialLeChargeMoins()` dans `assets/app.js`). C'est une répartition simple "au moins chargé", pas encore de règles avancées (zone géographique, secteur...).
+
+**Conversion en opportunité** (`convertirLead()`) : crée un `prospects/{id}` et un `offres/{id}` (étape `nouveau`, avec `leadOrigineId` pointant vers le lead), puis marque le lead `converti`.
+
+**Équipes** : pas de collection séparée à maintenir — une équipe est simplement l'ensemble des utilisateurs (`commercial`/`manager`) qui partagent la même valeur `equipeId`. La liste des équipes affichée dans les formulaires (ex. attribution automatique) est calculée à la volée depuis les fiches `utilisateurs` (`listeEquipes()`).
 
 ### `prospects/{id}`
 | Champ | Type | Notes |
@@ -40,10 +110,29 @@ Formulaire "Demande ton accès travailleur" de la page de connexion.
 | email, telephone | string | |
 | source | string | site web, recommandation, salon... |
 | statut | `prospect` \| `client` | |
-| responsableUid | string | référence utilisateur |
+| responsablesUids | array | uids des commerciaux responsables — **un prospect/client peut être attribué à plusieurs commerciaux** ; déterminent qui peut voir/modifier ce prospect (voir modèle de droits ci-dessus) |
+| equipeIds | array | dénormalisé depuis les fiches des responsables, pour le filtrage par Manager |
 | secteur / tags | array | |
 | historique | array<map> | `{date, auteur, note}` |
 | documentationTechnique | array<map> | `{nomFichier, url, description}` — fichiers Firebase Storage + texte libre |
+| dateCreation | timestamp | |
+| portailUid | string | présent si un accès portail a été créé pour ce client — référence l'UID Firebase Auth du compte portail |
+
+### `utilisateurs_portail/{uid}`
+Comptes clients (portail), séparés des comptes internes `utilisateurs/{uid}`.
+| Champ | Type | Notes |
+|---|---|---|
+| nom, email | string | |
+| prospectId | string | le client ne voit que les données liées à CE prospectId |
+| dateCreation | timestamp | |
+
+### `messages_clients/{id}`
+Message envoyé par un client depuis son portail.
+| Champ | Type | Notes |
+|---|---|---|
+| prospectId | string | |
+| message | string | |
+| statut | `nouveau` \| `traite` | |
 | dateCreation | timestamp | |
 
 ### `offres/{id}`
@@ -55,9 +144,13 @@ Formulaire "Demande ton accès travailleur" de la page de connexion.
 | dateReception, dateLimiteReponse | timestamp | |
 | etapePipeline | string | une des 6 étapes (voir ci-dessous) |
 | historiqueEtapes | array<map> | `{etape, date}` — sert de base au calcul des rappels |
-| responsableUid | string | |
+| responsablesUids | array | uids des commerciaux responsables — **plusieurs commerciaux possibles** sur une même offre |
+| equipeIds | array | dénormalisé depuis les fiches des responsables |
 | statut | `en_cours` \| `gagnee` \| `perdue` \| `abandonnee` | |
 | raisonPerte | string | si perdue |
+| leadOrigineId | string | présent si cette offre est née d'un lead converti |
+| montantEstime | number | montant potentiel (€), saisi à la création — sert au calcul du pipeline total et du revenu pondéré (Reporting) |
+| probabilite | number | 0-100, probabilité de réussite — `montantEstime × probabilite` = revenu pondéré de cette offre |
 | documentationTechnique | array<map> | fichiers + texte |
 
 **Étapes du pipeline** : `nouveau` → `qualifie` → `devis_envoye` → `devis_accepte` → `facture` → `client_actif`
@@ -75,6 +168,8 @@ Plusieurs devis peuvent répondre à la même offre.
 | conditions | string | délai, garantie... |
 | documentationTechnique | array<map> | fichiers + texte |
 | pdfUrl | string | généré |
+| responsablesUids, equipeIds, prospectId | array/string | **hérités automatiquement de l'offre parente** à la création, pour que les règles de portée (perso/équipe) et l'accès portail client s'appliquent aussi aux devis |
+| acceptationClient | map | `{nom, date}` — rempli quand le client accepte le devis depuis son portail (confirmation simple par saisie du nom, pas une vraie signature électronique) |
 
 ### `factures/{id}`
 | Champ | Type | Notes |
@@ -86,6 +181,7 @@ Plusieurs devis peuvent répondre à la même offre.
 | lignes, totalHT, totalTVA, totalTTC | — | repris du devis, modifiables |
 | statutPaiement | `a_payer` \| `payee` \| `en_retard` | |
 | exportBob | map | `{exportee: bool, dateExport, formatCsv}` |
+| responsablesUids, equipeIds | array | hérités du devis/de l'offre d'origine — **génération** réservée à superadmin/admin/direction (bouton "Générer facture" sur un devis accepté) ; **lecture** ouverte au(x) commercial(aux)/manager concerné(s) |
 
 ### `pointages/{id}`
 Heures travaillées, saisies par un travailleur sur un projet.

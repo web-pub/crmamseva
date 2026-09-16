@@ -1,8 +1,25 @@
 // ============================================================
 // Projet : CRMAmseva
-// Version : V01-015
-// Règles Firestore — authentification via Firebase Auth obligatoire,
-// contrôle des accès par rôle (superadmin / admin / travailleur)
+// Version : V01-023
+// Règles Firestore — authentification via Firebase Auth obligatoire.
+//
+// Rôles : superadmin, admin, direction, manager, commercial, travailleur
+//
+// Modèle de droits par enregistrement (record rules) sur les données
+// commerciales (leads, prospects, offres, devis, factures) :
+//   - superadmin / admin / direction : voient et modifient TOUT
+//   - manager   : voit/modifie les dossiers de SON ÉQUIPE (equipeIds, array)
+//   - commercial: voit/modifie les dossiers dont il fait partie des
+//                 responsables (responsablesUids, array — un dossier peut
+//                 être attribué à PLUSIEURS commerciaux)
+//   - travailleur : aucun accès aux données commerciales (pointage/stock only)
+//
+// Les factures sont en LECTURE pour les Commercial/Manager concernés,
+// mais leur création/modification reste réservée à peutTout() (facturation).
+//
+// Les requêtes côté client DOIVENT inclure un where() correspondant
+// (voir avecPortee() dans assets/app.js) : Firestore refuse une requête
+// de liste non filtrée si la règle dépend de resource.data.
 // ============================================================
 
 rules_version = '2';
@@ -14,8 +31,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function monProfil() {
+      return get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data;
+    }
+
     function getRole() {
-      return get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role;
+      return monProfil().role;
+    }
+
+    function monEquipe() {
+      return ("equipeId" in monProfil()) ? monProfil().equipeId : null;
     }
 
     function isSuperAdmin() {
@@ -30,85 +55,169 @@ service cloud.firestore {
       return isSignedIn() && getRole() == "travailleur";
     }
 
-    // ---------- Utilisateurs ----------
-    // Un utilisateur peut toujours lire SA PROPRE fiche (nécessaire pour
-    // déterminer son rôle à la connexion) ; lire les autres fiches est
-    // réservé aux admins.
-    match /utilisateurs/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdminOrAbove());
-      allow write: if isSuperAdmin();
+    // superadmin / admin / direction voient et modifient toutes les données commerciales
+    function peutTout() {
+      return isSignedIn() && (getRole() == "superadmin" || getRole() == "admin" || getRole() == "direction");
     }
 
-    // ---------- Comptes préparés, en attente de création dans Firebase Auth ----------
-    match /utilisateurs_en_attente/{id} {
-      allow read, write: if isAdminOrAbove();
+    function estManagerDeCetEquipe(equipeIds) {
+      return isSignedIn() && getRole() == "manager" && equipeIds is list && monEquipe() in equipeIds;
+    }
+
+    function estUnDesResponsables(uids) {
+      return isSignedIn() && getRole() == "commercial" && uids is list && request.auth.uid in uids;
+    }
+
+    // Droit de lecture/écriture générique sur un enregistrement commercial
+    // (lead, prospect, offre, devis) portant responsablesUids + equipeIds (arrays)
+    function accesCommercial(data) {
+      return peutTout() ||
+        estManagerDeCetEquipe(data.equipeIds) ||
+        estUnDesResponsables(data.responsablesUids);
+    }
+
+    // Même chose pour une création : on lit request.resource.data (le document envoyé)
+    function accesCommercialCreation(data) {
+      return peutTout() ||
+        estManagerDeCetEquipe(data.equipeIds) ||
+        estUnDesResponsables(data.responsablesUids);
+    }
+
+    // ---------- Portail client ----------
+    function monPortail() {
+      return get(/databases/$(database)/documents/utilisateurs_portail/$(request.auth.uid)).data;
+    }
+
+    function estUtilisateurPortail() {
+      return isSignedIn() && exists(/databases/$(database)/documents/utilisateurs_portail/$(request.auth.uid));
+    }
+
+    // Vrai si le connecté est le client portail rattaché à ce prospectId précis
+    function estClientDe(prospectId) {
+      return estUtilisateurPortail() && prospectId != null && monPortail().prospectId == prospectId;
+    }
+
+    // Vrai si le travailleur connecté a le module `m` dans sa fiche utilisateurs
+    function aModule(m) {
+      return isTravailleur() && ("modulesAutorises" in monProfil()) && (m in monProfil().modulesAutorises);
+    }
+
+    // ---------- Utilisateurs ----------
+    // Un utilisateur peut toujours lire SA PROPRE fiche (nécessaire pour
+    // déterminer son rôle à la connexion) ; lire les autres fiches, créer
+    // ou modifier des comptes est réservé aux admins.
+    match /utilisateurs/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdminOrAbove() || getRole() == "direction");
+      allow create, update: if isAdminOrAbove();
+      allow delete: if isSuperAdmin();
     }
 
     // ---------- Délais de relance par étape du pipeline ----------
     match /parametres_rappels/{etape} {
-      allow read, write: if isAdminOrAbove();
+      allow read, write: if peutTout();
     }
 
-    // ---------- Demandes d'accès (formulaire "Demande ton accès travailleur") ----------
-    match /demandes_acces/{demandeId} {
-      allow create: if true; // formulaire public, sans authentification
-      allow read, update, delete: if isAdminOrAbove();
+    // ---------- Activités (appels, emails, relances liés à un lead/offre) ----------
+    match /activites/{activiteId} {
+      allow read: if accesCommercial(resource.data);
+      allow create: if accesCommercialCreation(request.resource.data);
+      allow update, delete: if accesCommercial(resource.data);
+    }
+
+    // ---------- Plans d'activités (séquences-modèles, ex. "Jour 0 email, Jour 2 appel...") ----------
+    // Lecture ouverte à tous les rôles commerciaux (pour pouvoir appliquer un plan),
+    // gestion des modèles réservée à Admin/Super Admin/Direction.
+    match /plans_activites/{planId} {
+      allow read: if isSignedIn() && !isTravailleur();
+      allow write: if peutTout();
+    }
+
+    // ---------- Leads (contacts pas encore qualifiés) ----------
+    match /leads/{leadId} {
+      allow read: if accesCommercial(resource.data);
+      allow create: if accesCommercialCreation(request.resource.data);
+      allow update, delete: if accesCommercial(resource.data);
     }
 
     // ---------- Prospects / Clients ----------
-    // Un travailleur n'a jamais accès aux données commerciales
     match /prospects/{prospectId} {
-      allow read: if isSignedIn() && !isTravailleur();
-      allow write: if isAdminOrAbove();
+      allow read: if accesCommercial(resource.data) || estClientDe(prospectId);
+      allow create: if accesCommercialCreation(request.resource.data);
+      allow update, delete: if accesCommercial(resource.data);
+    }
+
+    // ---------- Comptes portail (clients) ----------
+    match /utilisateurs_portail/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdminOrAbove());
+      allow create, update, delete: if isAdminOrAbove();
+    }
+
+    // ---------- Messages envoyés par un client depuis son portail ----------
+    match /messages_clients/{messageId} {
+      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
+      allow create: if estUtilisateurPortail() && request.resource.data.prospectId == monPortail().prospectId;
+      allow update, delete: if accesCommercial(resource.data);
     }
 
     // ---------- Offres ----------
     match /offres/{offreId} {
-      allow read: if isSignedIn() && !isTravailleur();
-      allow write: if isAdminOrAbove();
+      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
+      allow create: if accesCommercialCreation(request.resource.data);
+      allow update, delete: if accesCommercial(resource.data);
     }
 
     // ---------- Devis (sous-collection d'une offre) ----------
+    // Portent leurs propres responsablesUids/equipeIds/prospectId (hérités de l'offre à la création)
     match /offres/{offreId}/devis/{devisId} {
-      allow read: if isSignedIn() && !isTravailleur();
-      allow write: if isAdminOrAbove();
+      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
+      allow create: if accesCommercialCreation(request.resource.data);
+      // Le client peut accepter SON devis : seuls les champs statut/acceptationClient changent, vers "accepte"
+      allow update: if accesCommercial(resource.data) ||
+        (estClientDe(resource.data.prospectId) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(["statut", "acceptationClient"]) &&
+         request.resource.data.statut == "accepte");
+      allow delete: if accesCommercial(resource.data);
     }
 
     // ---------- Factures ----------
+    // Lecture ouverte au(x) commercial(aux)/manager concerné(s) ET au client portail
+    // propriétaire ; création/modification (paiement, export BOB) réservée à peutTout().
     match /factures/{factureId} {
-      allow read: if isSignedIn() && !isTravailleur();
-      allow write: if isAdminOrAbove();
+      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
+      allow write: if peutTout();
     }
 
     // ---------- Pointages (heures travaillées par projet) ----------
     match /pointages/{pointageId} {
-      // Un travailleur ne peut créer/lire que ses propres pointages
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      // Un travailleur ne peut créer/lire que ses propres pointages,
+      // et seulement s'il a le module "pointage" activé sur sa fiche
+      allow create: if isAdminOrAbove() ||
+        (isSignedIn() && request.resource.data.uid == request.auth.uid && aModule("pointage"));
       allow read: if isAdminOrAbove() || (isSignedIn() && resource.data.uid == request.auth.uid);
       allow update, delete: if isAdminOrAbove();
     }
 
     // ---------- Stock ----------
     match /stock_articles/{articleId} {
-      allow read: if isSignedIn(); // consultation des quantités ouverte aux travailleurs
-      // Un travailleur peut décrémenter la quantité (prise de stock) mais ne peut
-      // toucher à aucun autre champ de l'article (prix, seuil, désignation...)
+      allow read: if isSignedIn(); // consultation des quantités ouverte à tous les connectés
+      // Un travailleur avec le module "stock" peut décrémenter la quantité (prise de
+      // stock) mais ne peut toucher à aucun autre champ de l'article (prix, seuil...)
       allow update: if isAdminOrAbove() ||
-        (isTravailleur() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["quantiteStock"]));
+        (aModule("stock") && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["quantiteStock"]));
       allow create, delete: if isAdminOrAbove();
     }
     match /stock_mouvements/{mouvementId} {
       allow read: if isAdminOrAbove() || (isSignedIn() && resource.data.uid == request.auth.uid);
-      // Un travailleur ne peut créer qu'une SORTIE en son propre nom
+      // Un travailleur avec le module "stock" ne peut créer qu'une SORTIE en son propre nom
       allow create: if isAdminOrAbove() ||
-        (isTravailleur() && request.resource.data.type == "sortie" && request.resource.data.uid == request.auth.uid);
+        (aModule("stock") && request.resource.data.type == "sortie" && request.resource.data.uid == request.auth.uid);
       allow update, delete: if isAdminOrAbove();
     }
 
     // ---------- Rappels ----------
     match /rappels/{rappelId} {
-      allow read: if isSignedIn();
-      allow write: if isAdminOrAbove();
+      allow read: if peutTout();
+      allow write: if peutTout();
     }
 
     // ---------- Contenu éditable (textes des pages publiques) ----------

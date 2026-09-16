@@ -27,16 +27,19 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-015</div>
+    <div class="version-tag">V01-023</div>
 
     <nav class="nav-group">
       <div class="nav-item active" data-view="pipeline"><span class="dot"></span> Offres &amp; Pipeline</div>
+      <div class="nav-item" data-view="leads"><span class="dot"></span> Leads</div>
       <div class="nav-item" data-view="prospects"><span class="dot"></span> Prospects</div>
       <div class="nav-item" data-view="devis"><span class="dot"></span> Devis</div>
-      <div class="nav-item" data-view="factures"><span class="dot"></span> Factures</div>
+      <div class="nav-item" data-view="factures" data-restrict="tout"><span class="dot"></span> Factures</div>
       <div class="nav-item" data-view="stock"><span class="dot"></span> Stock</div>
-      <div class="nav-item" data-view="rappels"><span class="dot"></span> Rappels</div>
-      <div class="nav-item" data-view="admin"><span class="dot"></span> Administration</div>
+      <div class="nav-item" data-view="activites"><span class="dot"></span> Activités</div>
+      <div class="nav-item" data-view="reporting"><span class="dot"></span> Reporting</div>
+      <div class="nav-item" data-view="rappels" data-restrict="tout"><span class="dot"></span> Rappels</div>
+      <div class="nav-item" data-view="admin" data-restrict="gestion"><span class="dot"></span> Administration</div>
     </nav>
     <div style="flex:1;"></div>
     <div class="nav-item" id="btn-logout" style="margin-top:16px; border-top:1px solid #33383A; padding-top:16px;"><span class="dot"></span> Se déconnecter</div>
@@ -44,14 +47,154 @@
 
   <main class="main-content">
 
+    <!-- ===== Vue Leads ===== -->
+    <section id="view-leads" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Leads</h1>
+          <div class="subtitle">Contacts pas encore qualifiés — à convertir en opportunité une fois le besoin identifié</div>
+          <span class="tag tag-prospect" id="scope-badge-leads" style="margin-top:8px; display:inline-block;"></span>
+        </div>
+        <button class="btn btn-primary" id="btn-new-lead">+ Nouveau lead</button>
+      </div>
+
+      <div class="panel-form" id="form-new-lead" style="display:none; margin-bottom:24px;">
+        <h2>Nouveau lead</h2>
+        <div class="field"><label class="field-required" for="lead-nom">Nom / entreprise</label><input type="text" id="lead-nom"></div>
+        <div class="field"><label for="lead-contact">Contact</label><input type="text" id="lead-contact" placeholder="nom de la personne"></div>
+        <div class="field"><label for="lead-email">Email</label><input type="email" id="lead-email"></div>
+        <div class="field"><label for="lead-telephone">Téléphone</label><input type="tel" id="lead-telephone"></div>
+        <div class="field"><label for="lead-source">Source</label><input type="text" id="lead-source" placeholder="site web, salon, recommandation..."></div>
+        <div class="field"><label for="lead-medium">Medium</label>
+          <select id="lead-medium">
+            <option value="">— Non précisé —</option>
+            <option value="site_web">Site web</option>
+            <option value="reseaux_sociaux">Réseaux sociaux</option>
+            <option value="publicite">Publicité (CPC...)</option>
+            <option value="email">Email</option>
+            <option value="salon">Salon / événement</option>
+            <option value="recommandation">Recommandation</option>
+            <option value="telephone">Téléphone entrant</option>
+            <option value="autre">Autre</option>
+          </select>
+        </div>
+        <div class="field"><label for="lead-campagne">Campagne</label><input type="text" id="lead-campagne" placeholder="ex. Campagne Juin 2026"></div>
+        <div class="field"><label for="lead-description">Description du besoin</label><textarea id="lead-description"></textarea></div>
+
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+            <input type="checkbox" id="lead-auto-assign" style="width:auto;" checked> Attribution automatique (au commercial le moins chargé de l'équipe)
+          </label>
+        </div>
+        <div class="field" id="lead-equipe-field">
+          <label class="field-required" for="lead-equipe">Équipe</label>
+          <select id="lead-equipe"></select>
+        </div>
+        <div class="field" id="lead-responsable-field" style="display:none;">
+          <label class="field-required" for="lead-responsable">Responsable</label>
+          <select id="lead-responsable" multiple size="4"></select>
+          <p class="required-note">Plusieurs commerciaux possibles (Ctrl/Cmd + clic).</p>
+        </div>
+
+        <button class="btn btn-primary" id="btn-save-lead">Créer le lead</button>
+        <button class="btn btn-secondary" id="btn-cancel-lead">Annuler</button>
+      </div>
+
+      <table class="data-table" id="leads-table">
+        <thead>
+          <tr><th>Nom</th><th>Contact</th><th>Source</th><th>Score</th><th>Responsable</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="panel-form" id="form-apply-plan" style="display:none; margin-top:20px;">
+        <h2>Appliquer un plan d'activités</h2>
+        <div class="field"><label class="field-required" for="apply-plan-select">Plan</label><select id="apply-plan-select"></select></div>
+        <button class="btn btn-primary" id="btn-confirm-apply-plan">Appliquer</button>
+        <button class="btn btn-secondary" id="btn-cancel-apply-plan">Annuler</button>
+      </div>
+    </section>
+
+    <!-- ===== Vue Reporting ===== -->
+    <section id="view-reporting" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Reporting</h1>
+          <div class="subtitle">Prévisions, sources marketing, performance — sur ta portée de données actuelle</div>
+          <span class="tag tag-prospect" id="scope-badge-reporting" style="margin-top:8px; display:inline-block;"></span>
+        </div>
+      </div>
+
+      <div class="stat-grid" id="reporting-kpis">
+        <!-- généré par app.js -->
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-top:8px;">
+        <div>
+          <h2 style="font-size:16px; margin-bottom:12px;">Offres par étape (valeur pondérée)</h2>
+          <div id="report-bars-etapes"></div>
+        </div>
+        <div>
+          <h2 style="font-size:16px; margin-bottom:12px;">Leads par source</h2>
+          <div id="report-bars-sources"></div>
+        </div>
+      </div>
+
+      <h2 style="font-size:16px; margin:28px 0 12px;">Performance par commercial</h2>
+      <table class="data-table" id="report-commerciaux-table">
+        <thead>
+          <tr><th>Commercial</th><th>Leads</th><th>Taux conversion</th><th>Offres gagnées</th><th>CA gagné</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- ===== Vue Activités ===== -->
+    <section id="view-activites" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Activités</h1>
+          <div class="subtitle">Appels, emails, réunions, relances — vos tâches liées à un lead ou une offre</div>
+          <span class="tag tag-prospect" id="scope-badge-activites" style="margin-top:8px; display:inline-block;"></span>
+        </div>
+        <button class="btn btn-primary" id="btn-new-activite">+ Nouvelle activité</button>
+      </div>
+
+      <div class="panel-form" id="form-new-activite" style="display:none; margin-bottom:24px;">
+        <h2>Nouvelle activité</h2>
+        <div class="field"><label for="activite-type">Type</label>
+          <select id="activite-type">
+            <option value="appel">Appel</option>
+            <option value="email">Email</option>
+            <option value="reunion">Réunion</option>
+            <option value="tache">Tâche</option>
+            <option value="personnalisee">Personnalisée</option>
+          </select>
+        </div>
+        <div class="field"><label class="field-required" for="activite-titre">Titre</label><input type="text" id="activite-titre" placeholder="ex. Appeler Jean Dupont"></div>
+        <div class="field"><label class="field-required" for="activite-date">Échéance</label><input type="date" id="activite-date"></div>
+        <div class="field"><label for="activite-cible">Lié à (optionnel)</label><select id="activite-cible"><option value="">— Aucun —</option></select></div>
+        <button class="btn btn-primary" id="btn-save-activite">Créer l'activité</button>
+        <button class="btn btn-secondary" id="btn-cancel-activite">Annuler</button>
+      </div>
+
+      <table class="data-table" id="activites-table">
+        <thead>
+          <tr><th>Échéance</th><th>Type</th><th>Titre</th><th>Lié à</th><th>Responsable</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
     <!-- ===== Vue Pipeline ===== -->
     <section id="view-pipeline">
       <div class="page-header">
         <div>
           <h1>Offres &amp; pipeline</h1>
           <div class="subtitle">Du prospect à la facture — relances automatiques entre chaque étape</div>
+          <span class="tag tag-prospect" id="scope-badge-pipeline" style="margin-top:8px; display:inline-block;"></span>
         </div>
-        <button class="btn btn-primary">+ Nouvelle offre</button>
+        <button class="btn btn-primary" id="btn-new-offre">+ Nouvelle offre</button>
       </div>
 
       <div class="stat-grid">
@@ -73,6 +216,18 @@
         </div>
       </div>
 
+      <div class="panel-form" id="form-new-offre" style="display:none; margin-bottom:24px;">
+        <h2>Nouvelle offre</h2>
+        <div class="field"><label class="field-required" for="offre-numero">Numéro (unique)</label><input type="text" id="offre-numero" placeholder="ex. OFF-2026-020"></div>
+        <div class="field"><label class="field-required" for="offre-prospect">Prospect</label><select id="offre-prospect"></select></div>
+        <div class="field"><label for="offre-titre">Titre / besoin exprimé</label><input type="text" id="offre-titre"></div>
+        <div class="field"><label for="offre-montant">Montant estimé (€)</label><input type="number" id="offre-montant" step="1" placeholder="ex. 15000"></div>
+        <div class="field"><label for="offre-probabilite">Probabilité de réussite (%)</label><input type="number" id="offre-probabilite" min="0" max="100" step="5" value="50"></div>
+        <div class="field"><label class="field-required" for="offre-responsable">Responsable(s)</label><select id="offre-responsable" multiple size="4"></select><p class="required-note">Plusieurs commerciaux possibles (Ctrl/Cmd + clic).</p></div>
+        <button class="btn btn-primary" id="btn-save-offre">Créer l'offre</button>
+        <button class="btn btn-secondary" id="btn-cancel-offre">Annuler</button>
+      </div>
+
       <div class="pipeline" id="pipeline-board">
         <!-- généré par app.js -->
       </div>
@@ -84,15 +239,45 @@
         <div>
           <h1>Prospects &amp; clients</h1>
           <div class="subtitle">Toutes les fiches contact</div>
+          <span class="tag tag-prospect" id="scope-badge-prospects" style="margin-top:8px; display:inline-block;"></span>
         </div>
-        <button class="btn btn-primary">+ Nouveau prospect</button>
+        <button class="btn btn-primary" id="btn-new-prospect">+ Nouveau prospect</button>
       </div>
+
+      <div class="panel-form" id="form-new-prospect" style="display:none; margin-bottom:24px;">
+        <h2>Nouveau prospect</h2>
+        <div class="field"><label class="field-required" for="prospect-nom">Nom / raison sociale</label><input type="text" id="prospect-nom"></div>
+        <div class="field"><label for="prospect-type">Type</label>
+          <select id="prospect-type"><option value="entreprise">Entreprise</option><option value="particulier">Particulier</option></select>
+        </div>
+        <div class="field"><label for="prospect-email">Email</label><input type="email" id="prospect-email"></div>
+        <div class="field"><label for="prospect-telephone">Téléphone</label><input type="tel" id="prospect-telephone"></div>
+        <div class="field"><label for="prospect-source">Source</label><input type="text" id="prospect-source" placeholder="site web, recommandation, salon..."></div>
+        <div class="field"><label class="field-required" for="prospect-responsable">Responsable(s)</label><select id="prospect-responsable" multiple size="4"></select><p class="required-note">Plusieurs commerciaux possibles (Ctrl/Cmd + clic).</p></div>
+        <button class="btn btn-primary" id="btn-save-prospect">Créer le prospect</button>
+        <button class="btn btn-secondary" id="btn-cancel-prospect">Annuler</button>
+      </div>
+
       <table class="data-table" id="prospects-table">
         <thead>
-          <tr><th>Nom</th><th>Type</th><th>Email</th><th>Téléphone</th><th>Statut</th><th>Responsable</th></tr>
+          <tr><th>Nom</th><th>Type</th><th>Email</th><th>Téléphone</th><th>Statut</th><th>Responsable</th><th>Portail</th></tr>
         </thead>
         <tbody></tbody>
       </table>
+
+      <div class="panel-form" id="form-portail-access" style="display:none; margin-top:20px;">
+        <h2>Donner accès portail — <span id="portail-prospect-nom"></span></h2>
+        <div class="field"><label class="field-required" for="portail-email">Email de connexion du client</label><input type="email" id="portail-email"></div>
+        <div class="field password-field"><label>Mot de passe</label>
+          <input type="password" id="portail-password">
+          <button type="button" class="toggle-eye" data-target="portail-password" aria-label="Afficher le mot de passe">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <p class="required-note" id="portail-status"></p>
+        <button class="btn btn-primary" id="btn-save-portail">Créer l'accès</button>
+        <button class="btn btn-secondary" id="btn-cancel-portail">Annuler</button>
+      </div>
     </section>
 
     <!-- ===== Vue Stock ===== -->
@@ -124,7 +309,7 @@
 
       <table class="data-table" id="devis-table">
         <thead>
-          <tr><th>Référence</th><th>Offre liée</th><th>Client / prospect</th><th>Émis le</th><th>Total TTC</th><th>Statut</th><th></th></tr>
+          <tr><th>Référence</th><th>Offre liée</th><th>Client / prospect</th><th>Émis le</th><th>Total TTC</th><th>Statut</th><th>Facture</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -206,6 +391,7 @@
 
       <div class="tabs">
         <div class="tab-item active" data-tab="tab-users">Utilisateurs</div>
+        <div class="tab-item" data-tab="tab-plans">Plans d'activités</div>
         <div class="tab-item" data-tab="tab-content">Contenu du site</div>
         <div class="tab-item" data-tab="tab-passwords">Mots de passe (Super Admin)</div>
       </div>
@@ -216,7 +402,7 @@
           <button class="btn btn-primary" id="btn-new-user">+ Nouvel utilisateur</button>
         </div>
         <table class="data-table" id="users-table">
-          <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Email</th><th>Statut</th></tr></thead>
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Équipe</th><th>Email</th><th>Pointage</th><th>Stock</th></tr></thead>
           <tbody></tbody>
         </table>
 
@@ -226,24 +412,74 @@
           <div class="field"><label class="field-required" for="user-nom">Nom</label><input type="text" id="user-nom"></div>
           <div class="field"><label class="field-required" for="user-naissance">Date de naissance</label><input type="date" id="user-naissance"></div>
           <div class="field"><label for="user-role">Rôle</label>
-            <select id="user-role"><option value="travailleur">Travailleur</option><option value="admin">Admin</option><option value="superadmin">Super Admin</option></select>
+            <select id="user-role">
+              <option value="travailleur">Travailleur</option>
+              <option value="commercial">Commercial</option>
+              <option value="manager">Manager</option>
+              <option value="direction">Direction</option>
+              <option value="admin">Admin</option>
+              <option value="superadmin">Super Admin</option>
+            </select>
           </div>
-          <div class="field"><label>Identifiant suggéré</label><input type="text" id="user-identifiant"></div>
-          <div class="field password-field"><label>Mot de passe suggéré</label>
+
+          <div class="field" id="user-equipe-field" style="display:none;">
+            <label class="field-required" for="user-equipe">Équipe</label>
+            <input type="text" id="user-equipe" placeholder="ex. Belgique, Grands comptes...">
+            <p class="required-note">Un Manager et ses Commerciaux doivent avoir exactement le même nom d'équipe (sensible à la casse).</p>
+          </div>
+
+          <div class="field" id="user-modules-field">
+            <label>Modules autorisés (rôle Travailleur)</label>
+            <label style="display:flex; align-items:center; gap:8px; font-weight:400; font-size:14px; margin-bottom:6px;">
+              <input type="checkbox" id="module-pointage" value="pointage" checked style="width:auto;"> Pointage des heures
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; font-weight:400; font-size:14px;">
+              <input type="checkbox" id="module-stock" value="stock" checked style="width:auto;"> Stock (consultation + prise)
+            </label>
+            <p class="required-note">Coche uniquement ce dont cette personne a besoin — modifiable à tout moment depuis sa fiche.</p>
+          </div>
+
+          <div class="field"><label class="field-required" for="user-email">Email de connexion</label><input type="email" id="user-email" placeholder="prenom.n@amseva.be"></div>
+          <div class="field"><label>Identifiant (interne, informatif)</label><input type="text" id="user-identifiant"></div>
+          <div class="field password-field"><label>Mot de passe</label>
             <input type="password" id="user-password">
             <button type="button" class="toggle-eye" data-target="user-password" aria-label="Afficher le mot de passe">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
-          <button class="btn btn-primary" id="btn-save-user">Enregistrer</button>
+          <p class="required-note" id="user-save-status"></p>
+          <button class="btn btn-primary" id="btn-save-user">Créer le compte</button>
           <button class="btn btn-secondary" id="btn-cancel-user">Annuler</button>
+        </div>
+      </div>
+
+      <div id="tab-plans" class="tab-panel" style="display:none;">
+        <div class="page-header" style="margin-top:20px;">
+          <div class="subtitle">Séquences d'activités préconfigurées (ex. Jour 0 → email, Jour 2 → appel, Jour 5 → relance...), applicables sur un lead depuis la vue Leads.</div>
+          <button class="btn btn-primary" id="btn-new-plan">+ Nouveau plan</button>
+        </div>
+        <table class="data-table" id="plans-table">
+          <thead><tr><th>Nom du plan</th><th>Étapes</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="panel-form" id="form-new-plan" style="display:none; margin-top:20px;">
+          <h2>Nouveau plan d'activités</h2>
+          <div class="field"><label class="field-required" for="plan-nom">Nom du plan</label><input type="text" id="plan-nom" placeholder="ex. Prospection standard"></div>
+          <div class="field">
+            <label class="field-required" for="plan-etapes">Étapes (une par ligne : jour;type;titre)</label>
+            <textarea id="plan-etapes" rows="6" placeholder="0;email;Email introduction&#10;2;appel;Appel&#10;5;email;Email&#10;10;email;Relance&#10;20;appel;Dernier appel"></textarea>
+            <p class="required-note">Type parmi : appel, email, reunion, tache, personnalisee. "Jour" = nombre de jours après le déclenchement du plan.</p>
+          </div>
+          <button class="btn btn-primary" id="btn-save-plan">Enregistrer le plan</button>
+          <button class="btn btn-secondary" id="btn-cancel-plan">Annuler</button>
         </div>
       </div>
 
       <div id="tab-content" class="tab-panel" style="display:none;">
         <p class="subtitle" style="margin:20px 0;">Textes des pages publiques — modifiables ici, aucun contenu n'est figé dans le code.</p>
         <div class="field"><label>Titre de la page de connexion</label><input type="text" value="Connexion"></div>
-        <div class="field"><label>Message d'accueil "Demande d'accès"</label><textarea>Complète cette fiche rapide, un administrateur validera ton accès.</textarea></div>
+        <div class="field"><label>Message d'accueil "Demande d'accès"</label><textarea>Demande ton accès à Hélène Laruelle (administratrice).</textarea></div>
         <button class="btn btn-primary">Enregistrer le contenu</button>
       </div>
 
