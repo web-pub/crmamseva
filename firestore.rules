@@ -1,0 +1,120 @@
+// ============================================================
+// Projet : CRMAmseva
+// Version : V01-012
+// Règles Firestore — authentification via Firebase Auth obligatoire,
+// contrôle des accès par rôle (superadmin / admin / travailleur)
+// ============================================================
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getRole() {
+      return get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && getRole() == "superadmin";
+    }
+
+    function isAdminOrAbove() {
+      return isSignedIn() && (getRole() == "superadmin" || getRole() == "admin");
+    }
+
+    function isTravailleur() {
+      return isSignedIn() && getRole() == "travailleur";
+    }
+
+    // ---------- Utilisateurs ----------
+    // Un utilisateur peut toujours lire SA PROPRE fiche (nécessaire pour
+    // déterminer son rôle à la connexion) ; lire les autres fiches est
+    // réservé aux admins.
+    match /utilisateurs/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdminOrAbove());
+      allow write: if isSuperAdmin();
+    }
+
+    // ---------- Comptes préparés, en attente de création dans Firebase Auth ----------
+    match /utilisateurs_en_attente/{id} {
+      allow read, write: if isAdminOrAbove();
+    }
+
+    // ---------- Délais de relance par étape du pipeline ----------
+    match /parametres_rappels/{etape} {
+      allow read, write: if isAdminOrAbove();
+    }
+
+    // ---------- Demandes d'accès (formulaire "Demande ton accès travailleur") ----------
+    match /demandes_acces/{demandeId} {
+      allow create: if true; // formulaire public, sans authentification
+      allow read, update, delete: if isAdminOrAbove();
+    }
+
+    // ---------- Prospects / Clients ----------
+    // Un travailleur n'a jamais accès aux données commerciales
+    match /prospects/{prospectId} {
+      allow read: if isSignedIn() && !isTravailleur();
+      allow write: if isAdminOrAbove();
+    }
+
+    // ---------- Offres ----------
+    match /offres/{offreId} {
+      allow read: if isSignedIn() && !isTravailleur();
+      allow write: if isAdminOrAbove();
+    }
+
+    // ---------- Devis (sous-collection d'une offre) ----------
+    match /offres/{offreId}/devis/{devisId} {
+      allow read: if isSignedIn() && !isTravailleur();
+      allow write: if isAdminOrAbove();
+    }
+
+    // ---------- Factures ----------
+    match /factures/{factureId} {
+      allow read: if isSignedIn() && !isTravailleur();
+      allow write: if isAdminOrAbove();
+    }
+
+    // ---------- Pointages (heures travaillées par projet) ----------
+    match /pointages/{pointageId} {
+      // Un travailleur ne peut créer/lire que ses propres pointages
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read: if isAdminOrAbove() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdminOrAbove();
+    }
+
+    // ---------- Stock ----------
+    match /stock_articles/{articleId} {
+      allow read: if isSignedIn(); // consultation des quantités ouverte aux travailleurs
+      // Un travailleur peut décrémenter la quantité (prise de stock) mais ne peut
+      // toucher à aucun autre champ de l'article (prix, seuil, désignation...)
+      allow update: if isAdminOrAbove() ||
+        (isTravailleur() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["quantiteStock"]));
+      allow create, delete: if isAdminOrAbove();
+    }
+    match /stock_mouvements/{mouvementId} {
+      allow read: if isAdminOrAbove() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      // Un travailleur ne peut créer qu'une SORTIE en son propre nom
+      allow create: if isAdminOrAbove() ||
+        (isTravailleur() && request.resource.data.type == "sortie" && request.resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdminOrAbove();
+    }
+
+    // ---------- Rappels ----------
+    match /rappels/{rappelId} {
+      allow read: if isSignedIn();
+      allow write: if isAdminOrAbove();
+    }
+
+    // ---------- Contenu éditable (textes des pages publiques) ----------
+    match /contenu_site/{docId} {
+      allow read: if true;
+      allow write: if isAdminOrAbove();
+    }
+  }
+}
