@@ -93,7 +93,7 @@ if (signupForm) {
     };
 
     try {
-      await db.collection("demandes_membres").add(demande);
+      await db.collection("demandes_acces").add(demande);
       alert("Votre demande a bien été envoyée. Un administrateur va la valider prochainement.");
       signupForm.reset();
     } catch (err) {

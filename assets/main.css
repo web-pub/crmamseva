@@ -180,6 +180,15 @@ a:focus-visible {
 }
 
 .sidebar-header { margin-bottom: 8px; }
+.sidebar-logo {
+  display: inline-block;
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+}
+.sidebar-logo img { height: 20px; width: auto; display: block; }
+
 .home-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -208,7 +217,6 @@ a:focus-visible {
 }
 .role-badge.super-admin { background: var(--amber-soft); color: #6B4A16; }
 .role-badge.admin { background: var(--pine-soft); color: var(--pine); }
-.role-badge.membre { background: #E4E2DC; color: var(--ink-soft); }
 .role-badge.travailleur { background: #DCE3EA; color: #2C4A66; }
 
 .version-tag { font-size: 11px; color: #8B8F87; margin-bottom: 24px; }

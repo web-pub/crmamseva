@@ -9,7 +9,7 @@ let currentUser = null;
 let STOCK_DATA = [];
 let PROJETS_DATA = []; // simplifié : offres actives, sans les données commerciales
 
-const LABELS_ROLE = { superadmin: "Super Admin", admin: "Admin", membre: "Membre", travailleur: "Travailleur" };
+const LABELS_ROLE = { superadmin: "Super Admin", admin: "Admin", travailleur: "Travailleur" };
 
 auth.onAuthStateChanged(async (user) => {
   if (!user) {

@@ -21,7 +21,7 @@ const LABELS_RAPPEL_TYPE = {
   changement_etape: "Changement d'étape",
 };
 const LABELS_CANAL = { email: "Email", notification: "Notification", les_deux: "Email + notification" };
-const LABELS_ROLE = { superadmin: "Super Admin", admin: "Admin", membre: "Membre", travailleur: "Travailleur" };
+const LABELS_ROLE = { superadmin: "Super Admin", admin: "Admin", travailleur: "Travailleur" };
 
 // ---------- État courant (rempli par les écouteurs Firestore) ----------
 let currentUser = null;
