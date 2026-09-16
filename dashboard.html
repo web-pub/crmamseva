@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CRMAmseva — Tableau de bord</title>
-<link rel="icon" href="assets/logo-crmamseva.svg">
+<link rel="icon" href="assets/logo-amseva.png">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/main.css">
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
@@ -19,6 +19,7 @@
 
   <aside class="sidebar">
     <div class="sidebar-header">
+      <div class="sidebar-logo"><img src="assets/logo-amseva.png" alt="AM Seva"></div>
       <button class="home-icon-btn" title="Accueil du site" onclick="window.location.href='index.html'">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
       </button>
@@ -26,7 +27,7 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-010</div>
+    <div class="version-tag">V01-015</div>
 
     <nav class="nav-group">
       <div class="nav-item active" data-view="pipeline"><span class="dot"></span> Offres &amp; Pipeline</div>
@@ -225,7 +226,7 @@
           <div class="field"><label class="field-required" for="user-nom">Nom</label><input type="text" id="user-nom"></div>
           <div class="field"><label class="field-required" for="user-naissance">Date de naissance</label><input type="date" id="user-naissance"></div>
           <div class="field"><label for="user-role">Rôle</label>
-            <select id="user-role"><option value="travailleur">Travailleur</option><option value="membre">Membre</option><option value="admin">Admin</option><option value="superadmin">Super Admin</option></select>
+            <select id="user-role"><option value="travailleur">Travailleur</option><option value="admin">Admin</option><option value="superadmin">Super Admin</option></select>
           </div>
           <div class="field"><label>Identifiant suggéré</label><input type="text" id="user-identifiant"></div>
           <div class="field password-field"><label>Mot de passe suggéré</label>
@@ -242,7 +243,7 @@
       <div id="tab-content" class="tab-panel" style="display:none;">
         <p class="subtitle" style="margin:20px 0;">Textes des pages publiques — modifiables ici, aucun contenu n'est figé dans le code.</p>
         <div class="field"><label>Titre de la page de connexion</label><input type="text" value="Connexion"></div>
-        <div class="field"><label>Message d'accueil "Devenez membre"</label><textarea>Complétez cette fiche rapide, un administrateur validera votre accès.</textarea></div>
+        <div class="field"><label>Message d'accueil "Demande d'accès"</label><textarea>Complète cette fiche rapide, un administrateur validera ton accès.</textarea></div>
         <button class="btn btn-primary">Enregistrer le contenu</button>
       </div>
 
