@@ -17,8 +17,41 @@ auth.onAuthStateChanged(async (user) => {
     return;
   }
   currentUser = user;
+
+  try {
+    const doc = await db.collection("utilisateurs").doc(user.uid).get();
+    const modules = doc.exists ? (doc.data().modulesAutorises || []) : [];
+    appliquerModulesAutorises(modules);
+  } catch (err) {
+    console.error(err);
+  }
+
   demarrerEcouteurs();
 });
+
+function appliquerModulesAutorises(modules) {
+  const navItems = document.querySelectorAll("#travailleur-nav .nav-item");
+  let premierAutorise = null;
+
+  navItems.forEach((item) => {
+    const module = item.dataset.module;
+    const autorise = modules.includes(module);
+    item.style.display = autorise ? "" : "none";
+    if (autorise && !premierAutorise) premierAutorise = item;
+  });
+
+  if (!premierAutorise) {
+    document.getElementById("no-module-msg").style.display = "block";
+    document.querySelectorAll("main > section").forEach((s) => (s.style.display = "none"));
+    return;
+  }
+
+  // Active la première vue autorisée (au cas où "Mon pointage" ne le serait pas)
+  navItems.forEach((i) => i.classList.remove("active"));
+  premierAutorise.classList.add("active");
+  document.querySelectorAll("main > section").forEach((s) => (s.style.display = "none"));
+  document.getElementById("view-" + premierAutorise.dataset.view).style.display = "block";
+}
 
 document.getElementById("btn-logout")?.addEventListener("click", () => auth.signOut());
 

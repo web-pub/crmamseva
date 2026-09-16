@@ -1,21 +1,22 @@
 /* ============================================================
    CRMAmseva — Design system
-   Palette : Fog (fond), Ink (texte), Route amber (accent primaire),
-             Deep pine (succès/client), Clay red (alerte/retard)
+   Palette : couleurs reprises du logo AM Seva (bleu marine + cyan)
    Typo : Fraunces (titres) + IBM Plex Sans (interface)
    ============================================================ */
 
 :root {
   /* Couleurs */
-  --fog:        #F1F2F0;
+  --fog:        #F1F3F7;
   --surface:    #FFFFFF;
   --ink:        #1A1D1F;
-  --ink-soft:   #5B6058;
-  --line:       #DEDBD2;
-  --amber:      #C1832F;
-  --amber-soft: #EDD9B8;
-  --pine:       #2E4E3F;
-  --pine-soft:  #DCE7DF;
+  --ink-soft:   #5B6068;
+  --line:       #DEE1EA;
+  --navy:       #293483;
+  --navy-soft:  #DDE1F3;
+  --sky:        #1B9BDA;
+  --sky-soft:   #D7EFFA;
+  --pine:       #2E6F4F;
+  --pine-soft:  #DCEEE3;
   --clay:       #A8402B;
   --clay-soft:  #F1DAD3;
   --sidebar:    #1A1D1F;
@@ -44,13 +45,13 @@ body {
 
 h1, h2, h3 { font-family: var(--font-display); font-weight: 600; margin: 0; }
 
-a { color: var(--amber); text-decoration: none; }
+a { color: var(--navy); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 button:focus-visible,
 input:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--navy);
   outline-offset: 2px;
 }
 
@@ -65,8 +66,8 @@ a:focus-visible {
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
-.btn-primary { background: var(--amber); color: #fff; }
-.btn-primary:hover { background: #A96E24; }
+.btn-primary { background: var(--navy); color: #fff; }
+.btn-primary:hover { background: #1F2968; }
 .btn-secondary { background: transparent; color: var(--ink); border-color: var(--line); }
 .btn-secondary:hover { background: var(--surface); }
 
@@ -126,7 +127,7 @@ a:focus-visible {
 
 .brand-mark { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
 .brand-mark .wordmark { font-family: var(--font-display); font-size: 24px; }
-.brand-mark .wordmark strong { color: var(--amber); }
+.brand-mark .wordmark strong { color: var(--navy); }
 
 .auth-card h1 { font-size: 20px; margin-bottom: 4px; }
 .auth-subtitle { color: var(--ink-soft); font-size: 13px; margin-bottom: 24px; }
@@ -149,6 +150,16 @@ a:focus-visible {
   font-size: 12px;
   color: var(--ink-soft);
 }
+.company-block {
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+.company-block strong { color: var(--ink); }
+.company-block a { color: var(--ink-soft); }
+.company-block a:hover { color: var(--navy); }
+
 .legal-links { margin-bottom: 10px; }
 .legal-links a { color: var(--ink-soft); margin: 0 4px; }
 .legal-links span.sep { color: var(--line); margin: 0 2px; }
@@ -215,9 +226,12 @@ a:focus-visible {
   border-radius: 999px;
   margin-bottom: 4px;
 }
-.role-badge.super-admin { background: var(--amber-soft); color: #6B4A16; }
+.role-badge.super-admin { background: var(--navy-soft); color: var(--navy); }
 .role-badge.admin { background: var(--pine-soft); color: var(--pine); }
-.role-badge.travailleur { background: #DCE3EA; color: #2C4A66; }
+.role-badge.direction { background: var(--navy-soft); color: var(--navy); }
+.role-badge.manager { background: #E7E2F5; color: #5B3FA0; }
+.role-badge.commercial { background: #EAF0E4; color: #4C6B3A; }
+.role-badge.travailleur { background: var(--sky-soft); color: #0F6C97; }
 
 .version-tag { font-size: 11px; color: #8B8F87; margin-bottom: 24px; }
 
@@ -234,7 +248,7 @@ a:focus-visible {
   margin-bottom: 2px;
 }
 .nav-item:hover { background: var(--sidebar-hover); color: #fff; }
-.nav-item.active { background: var(--amber); color: #fff; }
+.nav-item.active { background: var(--navy); color: #fff; }
 .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0; }
 .nav-item.active .dot { opacity: 1; }
 
@@ -271,7 +285,7 @@ a:focus-visible {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.stage-header.active-stage .step-index { background: var(--amber); }
+.stage-header.active-stage .step-index { background: var(--navy); }
 .stage-count { color: var(--ink-soft); font-weight: 400; margin-left: auto; }
 
 .card-offre {
@@ -333,7 +347,7 @@ table.data-table tbody tr:hover { background: var(--fog); }
   margin-bottom: -1px;
 }
 .tab-item:hover { color: var(--ink); }
-.tab-item.active { color: var(--ink); border-bottom-color: var(--amber); font-weight: 500; }
+.tab-item.active { color: var(--ink); border-bottom-color: var(--navy); font-weight: 500; }
 .tab-panel { max-width: 640px; }
 
 /* ---------- Panneau de formulaire inline ---------- */
@@ -351,6 +365,17 @@ table.data-table tbody tr:hover { background: var(--fog); }
 .delay-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .delay-row:last-child { border-bottom: none; }
 .delay-row input { width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); text-align: center; }
+
+/* ---------- Barres de reporting (CSS pur, sans librairie externe) ---------- */
+.report-bar-row { margin-bottom: 12px; }
+.report-bar-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+.report-bar-label .value { color: var(--ink-soft); }
+.report-bar-track { background: var(--fog); border-radius: 999px; height: 10px; overflow: hidden; }
+.report-bar-fill { height: 100%; background: var(--navy); border-radius: 999px; }
+.score-badge { display: inline-block; min-width: 32px; text-align: center; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.score-high { background: var(--pine-soft); color: var(--pine); }
+.score-mid { background: var(--sky-soft); color: #0F6C97; }
+.score-low { background: #EFEAE0; color: var(--ink-soft); }
 
 @media (max-width: 900px) {
   .app-shell { flex-direction: column; }

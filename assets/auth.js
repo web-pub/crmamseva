@@ -32,6 +32,12 @@ async function redirigerSelonRole(uid) {
   try {
     const doc = await db.collection("utilisateurs").doc(uid).get();
     if (!doc.exists) {
+      // Pas un compte interne : peut-être un compte portail client
+      const doePortail = await db.collection("utilisateurs_portail").doc(uid).get();
+      if (doePortail.exists) {
+        window.location.href = "portail-client.html";
+        return;
+      }
       afficherErreurLogin("Compte connecté mais aucune fiche utilisateur trouvée. Contacte un administrateur.");
       await auth.signOut();
       return;
@@ -78,27 +84,3 @@ auth.onAuthStateChanged((user) => {
     redirigerSelonRole(user.uid);
   }
 });
-
-const signupForm = document.getElementById("signup-form");
-if (signupForm) {
-  signupForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const demande = {
-      nom: document.getElementById("su-nom").value,
-      prenom: document.getElementById("su-prenom").value,
-      gsm: document.getElementById("su-gsm").value,
-      email: document.getElementById("su-email").value,
-      statut: "en_attente",
-      dateCreation: firebase.firestore.FieldValue.serverTimestamp(),
-    };
-
-    try {
-      await db.collection("demandes_acces").add(demande);
-      alert("Votre demande a bien été envoyée. Un administrateur va la valider prochainement.");
-      signupForm.reset();
-    } catch (err) {
-      console.error(err);
-      alert("Une erreur est survenue lors de l'envoi de la demande. Réessaie dans un instant.");
-    }
-  });
-}
