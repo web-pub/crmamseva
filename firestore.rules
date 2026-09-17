@@ -1,6 +1,6 @@
 // ============================================================
 // Projet : CRMAmseva
-// Version : V01-028
+// Version : V01-029
 // Règles Firestore — authentification via Firebase Auth obligatoire.
 //
 // Rôles : superadmin, admin, direction, manager, commercial, travailleur
@@ -108,8 +108,38 @@ service cloud.firestore {
     // ou modifier des comptes est réservé aux admins.
     match /utilisateurs/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdminOrAbove() || getRole() == "direction");
-      allow create, update: if isAdminOrAbove();
+      allow create: if isAdminOrAbove();
+      // Un utilisateur peut mettre à jour SA PROPRE date de dernière connexion
+      // (rien d'autre) — utile pour l'afficher dans l'onglet mots de passe
+      allow update: if isAdminOrAbove() ||
+        (isSignedIn() && request.auth.uid == userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["derniereConnexion"]));
       allow delete: if isSuperAdmin();
+    }
+
+    // ---------- Annuaire léger (nom + rôle uniquement, jamais l'email/mot de passe) ----------
+    // Sert à peupler la liste de contacts du chat, y compris pour un Travailleur qui
+    // n'a par ailleurs aucun accès à la collection "utilisateurs" complète.
+    match /annuaire/{uid} {
+      allow read: if isSignedIn() && !estUtilisateurPortail();
+      // Auto-enregistrement à la connexion (voir app.js/travailleur.js), ou par un admin
+      allow write: if isAdminOrAbove() || (isSignedIn() && request.auth.uid == uid);
+    }
+
+    // ---------- Chat : canal général ----------
+    match /chat_general/{messageId} {
+      allow read: if isSignedIn() && !estUtilisateurPortail();
+      allow create: if isSignedIn() && !estUtilisateurPortail() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdminOrAbove() || (isSignedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    // ---------- Chat : messages privés (1-à-1) ----------
+    // conversationId = les deux uids triés alphabétiquement et joints par "_"
+    // (ex. "abc123_xyz789") — vérifié directement sur le chemin, sans lecture
+    // supplémentaire : seuls les deux participants peuvent lire/écrire.
+    match /chat_prive/{conversationId}/messages/{messageId} {
+      allow read: if isSignedIn() && !estUtilisateurPortail() && request.auth.uid in conversationId.split("_");
+      allow create: if isSignedIn() && !estUtilisateurPortail() && request.auth.uid in conversationId.split("_") && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAdminOrAbove();
     }
 
     // ---------- Compteurs (numérotation automatique offres/devis, par année) ----------

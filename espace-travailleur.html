@@ -27,12 +27,13 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge travailleur">Travailleur</span>
-    <div class="version-tag">V01-028</div>
+    <div class="version-tag">V01-029</div>
 
     <!-- Accès volontairement limité : uniquement pointage et stock -->
     <nav class="nav-group" id="travailleur-nav">
       <div class="nav-item active" data-view="pointage" data-module="pointage"><span class="dot"></span> Mon pointage</div>
       <div class="nav-item" data-view="stock-travailleur" data-module="stock"><span class="dot"></span> Stock</div>
+      <div class="nav-item" data-view="chat"><span class="dot"></span> 💬 Chat</div>
     </nav>
     <p class="required-note" id="no-module-msg" style="display:none; padding:0 10px;">Aucun accès activé pour ton compte. Demande à un administrateur de t'attribuer un module.</p>
     <div style="flex:1;"></div>
@@ -110,6 +111,38 @@
         <button class="btn btn-secondary" id="btn-cancel-take">Annuler</button>
       </div>
       <p class="required-note" id="take-stock-status" style="margin-top:12px;"></p>
+    </section>
+
+    <!-- ===== Vue Chat ===== -->
+    <section id="view-chat" style="display:none;">
+      <div class="page-header">
+        <div><h1>Chat</h1><div class="subtitle">Canal général de l'équipe, et messages privés</div></div>
+      </div>
+
+      <div class="tabs">
+        <div class="chat-tab-item tab-item active" data-chattab="general">Général</div>
+        <div class="chat-tab-item tab-item" data-chattab="prive">Messages privés</div>
+      </div>
+
+      <div id="chattab-general" class="chat-tab-panel" style="margin-top:20px;">
+        <div class="chat-messages" id="chat-general-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-general-input" placeholder="Écrire un message à toute l'équipe...">
+          <button class="btn btn-primary" id="btn-send-general">Envoyer</button>
+        </div>
+      </div>
+
+      <div id="chattab-prive" class="chat-tab-panel" style="display:none; margin-top:20px;">
+        <div class="field" style="max-width:320px;">
+          <label for="chat-contact-select">Discuter avec</label>
+          <select id="chat-contact-select"></select>
+        </div>
+        <div class="chat-messages" id="chat-prive-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-prive-input" placeholder="Écrire un message privé...">
+          <button class="btn btn-primary" id="btn-send-prive">Envoyer</button>
+        </div>
+      </div>
     </section>
 
   </main>

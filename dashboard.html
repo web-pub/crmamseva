@@ -27,7 +27,7 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-028</div>
+    <div class="version-tag">V01-029</div>
 
     <nav class="nav-group">
       <div class="nav-item" data-view="notifications"><span class="dot"></span> 🔔 Notifications <span class="notif-count" id="notif-count" style="display:none;">0</span></div>
@@ -41,6 +41,7 @@
       <div class="nav-item" data-view="activites"><span class="dot"></span> Activités</div>
       <div class="nav-item" data-view="pointage"><span class="dot"></span> Mon pointage</div>
       <div class="nav-item" data-view="calendrier"><span class="dot"></span> Calendrier</div>
+      <div class="nav-item" data-view="chat"><span class="dot"></span> 💬 Chat</div>
       <div class="nav-item" data-view="reporting"><span class="dot"></span> Reporting</div>
       <div class="nav-item" data-view="rappels" data-restrict="tout"><span class="dot"></span> Rappels</div>
       <div class="nav-item" data-view="admin" data-restrict="gestion"><span class="dot"></span> Administration</div>
@@ -106,6 +107,38 @@
           <thead><tr><th>Personne</th><th>Date</th><th>Commande</th><th>Heures</th><th>Statut</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- ===== Vue Chat ===== -->
+    <section id="view-chat" style="display:none;">
+      <div class="page-header">
+        <div><h1>Chat</h1><div class="subtitle">Canal général de l'équipe, et messages privés</div></div>
+      </div>
+
+      <div class="tabs">
+        <div class="chat-tab-item tab-item active" data-chattab="general">Général</div>
+        <div class="chat-tab-item tab-item" data-chattab="prive">Messages privés</div>
+      </div>
+
+      <div id="chattab-general" class="chat-tab-panel" style="margin-top:20px;">
+        <div class="chat-messages" id="chat-general-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-general-input" placeholder="Écrire un message à toute l'équipe...">
+          <button class="btn btn-primary" id="btn-send-general">Envoyer</button>
+        </div>
+      </div>
+
+      <div id="chattab-prive" class="chat-tab-panel" style="display:none; margin-top:20px;">
+        <div class="field" style="max-width:320px;">
+          <label for="chat-contact-select">Discuter avec</label>
+          <select id="chat-contact-select"></select>
+        </div>
+        <div class="chat-messages" id="chat-prive-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-prive-input" placeholder="Écrire un message privé...">
+          <button class="btn btn-primary" id="btn-send-prive">Envoyer</button>
+        </div>
       </div>
     </section>
 
@@ -425,7 +458,23 @@
           <h1>Commandes</h1>
           <div class="subtitle">Bon de commande créé depuis un devis accepté, puis réception confirmée avant facturation</div>
         </div>
+        <button class="btn btn-primary" id="btn-new-commande">+ Nouvelle commande</button>
       </div>
+
+      <div class="panel-form" id="form-new-commande" style="display:none; margin-bottom:24px;">
+        <h2>Nouvelle commande (manuelle)</h2>
+        <p class="required-note">À utiliser pour une commande sans devis préalable. Sinon, préfère "Créer bon de commande" depuis l'onglet Devis.</p>
+        <div class="field"><label class="field-required" for="commande-prospect">Prospect / client</label><select id="commande-prospect"></select></div>
+        <div class="field"><label for="commande-htva">Montant HTVA (€)</label><input type="number" id="commande-htva" step="0.01"></div>
+        <div class="field"><label for="commande-tva">Taux de TVA</label>
+          <select id="commande-tva"><option value="21">21 %</option><option value="12">12 %</option><option value="6">6 %</option><option value="0">0 %</option></select>
+        </div>
+        <div class="field"><label>Montant TVA</label><input type="text" id="commande-montant-tva" readonly style="background:var(--fog);"></div>
+        <div class="field"><label>Prix TTC</label><input type="text" id="commande-ttc" readonly style="background:var(--fog); font-weight:600;"></div>
+        <button class="btn btn-primary" id="btn-save-commande">Créer la commande</button>
+        <button class="btn btn-secondary" id="btn-cancel-commande">Annuler</button>
+      </div>
+
       <table class="data-table" id="commandes-table">
         <thead>
           <tr><th>N° BC</th><th>Devis</th><th>Client</th><th>Total TTC</th><th>Statut</th><th></th></tr>
@@ -439,9 +488,27 @@
       <div class="page-header">
         <div>
           <h1>Factures</h1>
-          <div class="subtitle">Générées depuis un devis accepté — export vers BOB</div>
+          <div class="subtitle">Générées depuis une commande réceptionnée — export vers BOB</div>
         </div>
-        <button class="btn btn-primary" id="btn-export-bob">⬇ Exporter le CSV BOB</button>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-secondary" id="btn-new-facture">+ Nouvelle facture</button>
+          <button class="btn btn-primary" id="btn-export-bob">⬇ Exporter le CSV BOB</button>
+        </div>
+      </div>
+
+      <div class="panel-form" id="form-new-facture" style="display:none; margin-bottom:24px;">
+        <h2>Nouvelle facture (manuelle)</h2>
+        <p class="required-note">À utiliser pour une facture sans commande préalable. Sinon, préfère "Générer facture" depuis l'onglet Commandes.</p>
+        <div class="field"><label class="field-required" for="facture-prospect">Prospect / client</label><select id="facture-prospect"></select></div>
+        <div class="field"><label for="facture-htva">Montant HTVA (€)</label><input type="number" id="facture-htva" step="0.01"></div>
+        <div class="field"><label for="facture-tva">Taux de TVA</label>
+          <select id="facture-tva"><option value="21">21 %</option><option value="12">12 %</option><option value="6">6 %</option><option value="0">0 %</option></select>
+        </div>
+        <div class="field"><label>Montant TVA</label><input type="text" id="facture-montant-tva" readonly style="background:var(--fog);"></div>
+        <div class="field"><label>Prix TTC</label><input type="text" id="facture-ttc" readonly style="background:var(--fog); font-weight:600;"></div>
+        <div class="field"><label for="facture-echeance">Échéance</label><input type="date" id="facture-echeance"></div>
+        <button class="btn btn-primary" id="btn-save-facture">Créer la facture</button>
+        <button class="btn btn-secondary" id="btn-cancel-facture">Annuler</button>
       </div>
 
       <table class="data-table" id="factures-table">
@@ -582,7 +649,7 @@
       <div id="tab-passwords" class="tab-panel" style="display:none;">
         <p class="required-note" style="margin:20px 0; color:var(--clay);">Visible uniquement par le Super Admin — Firebase Authentication reste le mécanisme d'authentification réel ; cet onglet stocke une copie en clair à titre de confort, selon la préférence validée.</p>
         <table class="data-table" id="passwords-table">
-          <thead><tr><th>Utilisateur</th><th>Identifiant</th><th>Mot de passe</th></tr></thead>
+          <thead><tr><th>Utilisateur</th><th>Identifiant</th><th>Mot de passe</th><th>Dernière connexion</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>

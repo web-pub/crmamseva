@@ -1,8 +1,21 @@
-# CRMAmseva — V01-028
+# CRMAmseva — V01-029
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
 
-## 📅 Calendrier (nouveau)
+## 💬 Chat entre collègues (dernier point du cahier des charges, terminé)
+
+- **Canal général** + **messages privés (1-à-1)**, accessibles depuis le tableau de bord principal **et** depuis l'espace Travailleur
+- Liste de contacts alimentée par un **annuaire léger** (nom + rôle uniquement, jamais l'email ni le mot de passe), rempli automatiquement à la connexion de chacun — rien à configurer
+- Sécurité vérifiée directement sur le chemin Firestore pour les messages privés : seuls les deux participants d'une conversation peuvent la lire ou y écrire
+
+## 🐛 Corrections importantes
+
+- **Bug du devis introuvable en base** : la vraie cause était une erreur de syntaxe JavaScript dans une portion de code ajoutée pour les factures manuelles (une parenthèse fermante manquante) — ce type d'erreur empêche **tout le script** de se charger dans le navigateur, pas seulement la fonction concernée. C'est corrigé et la syntaxe de tous les fichiers a été revérifiée un par un.
+- **Bandeau d'erreur visible** ajouté en haut de l'écran : si une requête Firestore échoue (index manquant, permissions...), le message d'erreur réel s'affiche maintenant à l'écran au lieu de rester invisible dans la console du navigateur — précieux pour diagnostiquer un futur souci du même genre.
+- **"+ Nouvelle commande"** et **"+ Nouvelle facture"** : formulaires manuels ajoutés dans leurs onglets respectifs, pour les cas sans devis préalable.
+- **Dernière connexion** : enregistrée automatiquement à chaque connexion, affichée dans Administration > Mots de passe (Super Admin) au format `JJ/MM/AA - HH:MM`.
+
+## 📅 Calendrier
 
 - Nouvel item de menu **"Calendrier"** : vue mensuelle avec navigation ← / →
 - Affiche par jour, avec un petit point de couleur : les **Activités** (appel/email/réunion/tâche), les **devis qui expirent**, et les **dates de commande**
@@ -198,12 +211,12 @@ Ce n'est plus une démo : `index.html`, `dashboard.html` et `espace-travailleur.
 8. Confirmer la structure exacte des colonnes CSV pour BOB
 9. Créer les pages légales (`/legal/*.html`) liées depuis le footer
 
-## En attente de priorisation (demandes du 17/09)
+## Cahier des charges du 17/09 : toutes les demandes traitées
 - ~~Bon de commande + réception~~ — fait
 - ~~Système de notifications/alertes~~ — fait
 - ~~Feuille de temps généralisée~~ — fait
-- ~~Calendrier~~ — fait (voir plus haut)
-- Chat entre collègues
+- ~~Calendrier~~ — fait
+- ~~Chat entre collègues~~ — fait (voir plus haut)
 
 ## Rappel des règles standards appliquées
 

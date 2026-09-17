@@ -1,6 +1,6 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-028
+Version : V01-029
 
 ## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
 
@@ -54,6 +54,7 @@ Séparé des comptes internes (comme la distinction Odoo "utilisateurs internes"
 | modulesAutorises | array\<string\> | **Rôle travailleur uniquement.** Modules activés, ex. `["pointage", "stock"]`. Modifiable à tout moment depuis Administration > Utilisateurs |
 | equipeId | string | **Rôles commercial/manager uniquement.** Nom d'équipe en texte libre — un Manager et ses Commerciaux doivent porter exactement le même nom pour que le filtrage fonctionne |
 | dateCreation | timestamp | |
+| derniereConnexion | timestamp | mise à jour automatiquement à chaque connexion réussie (`assets/auth.js`) ; affichée dans Administration > Mots de passe (Super Admin), format `JJ/MM/AA - HH:MM` |
 
 Il n'y a plus de demande d'accès en libre-service : c'est l'Admin/Super Admin qui crée directement chaque compte (Auth + fiche Firestore) depuis Administration > Utilisateurs. Techniquement, la création du compte Firebase Authentication passe par une **app Firebase secondaire** temporaire (voir `creerCompteAuth()` dans `assets/app.js`), pour éviter que l'admin ne soit déconnecté de sa propre session pendant l'opération.
 
@@ -268,6 +269,34 @@ Un badge sur l'item de menu "🔔 Notifications" affiche le nombre total ; cliqu
 ## Calendrier
 
 Pas de collection dédiée non plus : vue mensuelle calculée côté client (`renderCalendrier()` dans `assets/app.js`) à partir des données déjà chargées. Affiche, par jour : les Activités (`dateEcheance`), les devis envoyés qui expirent (`dateValidite`), et les dates de commande. Navigation mois précédent/suivant ; clic sur un jour pour le détail.
+
+## Chat (canal général + messages privés)
+
+Accessible à **tous les rôles internes**, Travailleur compris (depuis son espace séparé).
+
+### `annuaire/{uid}`
+Répertoire léger — **jamais l'email ni le mot de passe**, juste ce qu'il faut pour peupler la liste de contacts du chat (y compris pour un Travailleur qui n'a par ailleurs aucun accès à la collection `utilisateurs`).
+| Champ | Type |
+|---|---|
+| nom | string |
+| role | string |
+
+Rempli automatiquement à chaque connexion (`enregistrerDansAnnuaire()` dans `assets/app.js` et `assets/travailleur.js`) — pas de saisie manuelle nécessaire, et les comptes déjà existants avant cette version se réenregistrent tout seuls à leur prochaine connexion.
+
+### `chat_general/{id}`
+| Champ | Type |
+|---|---|
+| uid, nom | string |
+| texte | string |
+| date | timestamp |
+
+### `chat_prive/{conversationId}/messages/{id}`
+Messages 1-à-1. `conversationId` = les deux uids triés alphabétiquement et joints par `_` (ex. `abc123_xyz789`) — calculé côté client (`conversationId()`), jamais stocké séparément. Les règles Firestore vérifient directement ce chemin (`conversationId.split("_")`) : seuls les deux participants peuvent lire ou écrire, sans lecture supplémentaire nécessaire.
+| Champ | Type |
+|---|---|
+| uid | string |
+| texte | string |
+| date | timestamp |
 
 ### `contenu_site/{cle}`
 Textes éditables des pages publiques (accueil, mentions légales, etc.) — pour que tout le contenu reste modifiable depuis les interfaces Admin/Super Admin.
