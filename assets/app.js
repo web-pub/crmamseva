@@ -41,6 +41,7 @@ let ACTIVITES_DATA = [];
 let PLANS_DATA = [];
 let PROSPECTS_DATA = [];
 let DEVIS_DATA = [];
+let COMMANDES_DATA = [];
 let FACTURES_DATA = [];
 let STOCK_DATA = [];
 let RAPPELS_DATA = [];
@@ -147,6 +148,11 @@ function demarrerEcouteursFirestore() {
     renderPipeline();
   }, (err) => console.error("devis:", err));
 
+  avecPortee(db.collection("commandes")).onSnapshot((snap) => {
+    COMMANDES_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderCommandes();
+  }, (err) => console.error("commandes:", err));
+
   // Factures : lecture pour tout le monde selon sa portée (un Commercial voit
   // ses propres factures) ; création/modification reste réservée à peutTout()
   avecPortee(db.collection("factures")).onSnapshot((snap) => {
@@ -159,12 +165,28 @@ function demarrerEcouteursFirestore() {
       RAPPELS_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       renderRappels();
     });
+  }
 
-    db.collection("parametres_rappels").onSnapshot((snap) => {
-      DELAIS_DATA = {};
-      snap.docs.forEach((d) => (DELAIS_DATA[d.id] = d.data().jours));
-      renderDelais();
-    });
+  // Lu par tout le monde (sauf travailleur/portail) : les seuils servent aussi au
+  // calcul des notifications pour Commercial/Manager, pas seulement à l'admin
+  db.collection("parametres_rappels").onSnapshot((snap) => {
+    DELAIS_DATA = {};
+    snap.docs.forEach((d) => (DELAIS_DATA[d.id] = d.data().jours));
+    renderDelais();
+    renderNotifications();
+    renderCalendrier();
+  });
+
+  db.collection("pointages").where("uid", "==", currentUser.uid).onSnapshot((snap) => {
+    MES_POINTAGES_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderMesPointages();
+  }, (err) => console.error("pointages:", err));
+
+  if (["superadmin", "admin"].includes(currentRole)) {
+    db.collection("pointages").onSnapshot((snap) => {
+      TOUS_POINTAGES_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      renderToutesPointages();
+    }, (err) => console.error("tous pointages:", err));
   }
 
   db.collection("stock_articles").onSnapshot((snap) => {
@@ -239,9 +261,11 @@ function renderPipeline() {
       card.innerHTML = `
         <div class="offre-ref">${o.numero || o.id}</div>
         <div class="offre-prospect">${getProspectNom(o.prospectId)}</div>
-        <div class="offre-meta"><span>${devisCount} devis lié(s)</span></div>
+        <div class="offre-meta"><span>${devisCount} devis lié(s)</span><span>${(o.montantTTC || 0).toFixed(0)} € TTC</span></div>
         ${enRetard ? `<div class="reminder-flag">⏰ ${jours} j sans mouvement</div>` : ""}
+        <button class="btn btn-secondary btn-edit-offre" data-id="${o.id}" style="padding:4px 8px;font-size:11px;margin-top:8px;">Modifier</button>
       `;
+      card.querySelector(".btn-edit-offre").addEventListener("click", () => ouvrirFormOffre(o.id));
       cardsWrap.appendChild(card);
     });
 
@@ -257,6 +281,8 @@ function renderPipeline() {
   }
 
   renderReporting();
+  renderNotifications();
+  renderCalendrier();
 }
 
 // ============================================================
@@ -266,6 +292,296 @@ function renderPipeline() {
 // ============================================================
 function formatEuro(n) {
   return (n || 0).toLocaleString("fr-BE", { maximumFractionDigits: 0 }) + " €";
+}
+
+// ============================================================
+// Notifications (rappels, délais dépassés, relances) — calculées
+// côté client à partir des données déjà chargées (déjà filtrées par portée)
+// ============================================================
+// ============================================================
+// Mon pointage (feuille de temps) — ouvert à tous les rôles internes,
+// pas seulement Travailleur. Une commande = un projet (demande d'Hélène).
+// ============================================================
+let MES_POINTAGES_DATA = [];
+let TOUS_POINTAGES_DATA = [];
+
+function remplirSelectCommandes() {
+  const select = document.getElementById("pointage-commande");
+  if (!select) return;
+  const options = COMMANDES_DATA.map((c) => `<option value="${c.id}">${c.numero}</option>`).join("");
+  select.innerHTML = options + `<option value="INTERNE">Tâches internes / administratif</option>`;
+}
+
+function nomCommande(commandeId) {
+  if (commandeId === "INTERNE") return "Tâches internes";
+  return COMMANDES_DATA.find((c) => c.id === commandeId)?.numero || commandeId;
+}
+
+function renderMesPointages() {
+  const tbody = document.querySelector("#mes-pointages-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = [...MES_POINTAGES_DATA]
+    .sort((a, b) => dateToJsDate(b.date) - dateToJsDate(a.date))
+    .map((p) => `
+      <tr>
+        <td>${dateToJsDate(p.date).toLocaleDateString("fr-BE")}</td>
+        <td>${nomCommande(p.commandeId)}</td>
+        <td>${p.heures} h</td>
+        <td>${p.description || "—"}</td>
+        <td><span class="tag ${p.statut === "valide" ? "tag-client" : "tag-prospect"}">${p.statut === "valide" ? "Validé" : "En attente"}</span></td>
+      </tr>
+    `).join("") || `<tr><td colspan="5" class="required-note">Aucun pointage pour l'instant.</td></tr>`;
+}
+
+function renderToutesPointages() {
+  const wrap = document.getElementById("toutes-pointages-wrap");
+  const tbody = document.querySelector("#toutes-pointages-table tbody");
+  if (!wrap || !tbody) return;
+  if (!["superadmin", "admin"].includes(currentRole)) { wrap.style.display = "none"; return; }
+  wrap.style.display = "block";
+
+  tbody.innerHTML = [...TOUS_POINTAGES_DATA]
+    .sort((a, b) => dateToJsDate(b.date) - dateToJsDate(a.date))
+    .map((p) => `
+      <tr>
+        <td>${USERS_DATA.find((u) => u.id === p.uid)?.nom || p.uid}</td>
+        <td>${dateToJsDate(p.date).toLocaleDateString("fr-BE")}</td>
+        <td>${nomCommande(p.commandeId)}</td>
+        <td>${p.heures} h</td>
+        <td><span class="tag ${p.statut === "valide" ? "tag-client" : "tag-prospect"}">${p.statut === "valide" ? "Validé" : "En attente"}</span></td>
+        <td>${p.statut === "valide" ? "" : `<button class="btn btn-secondary btn-valider-pointage" data-id="${p.id}" style="padding:5px 10px;font-size:12px;">Valider</button>`}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="6" class="required-note">Aucun pointage pour l'instant.</td></tr>`;
+
+  document.querySelectorAll(".btn-valider-pointage").forEach((btn) => {
+    btn.addEventListener("click", () => db.collection("pointages").doc(btn.dataset.id).update({ statut: "valide" }).catch((err) => console.error(err)));
+  });
+}
+
+document.getElementById("btn-save-pointage")?.addEventListener("click", async () => {
+  const commandeId = document.getElementById("pointage-commande").value;
+  const dateStr = document.getElementById("pointage-date").value;
+  const heures = parseFloat(document.getElementById("pointage-heures").value);
+  const description = document.getElementById("pointage-description").value;
+
+  if (!heures || heures <= 0 || !dateStr) {
+    alert("Merci d'indiquer une date et un nombre d'heures valide.");
+    return;
+  }
+
+  try {
+    await db.collection("pointages").add({
+      uid: currentUser.uid,
+      commandeId,
+      date: firebase.firestore.Timestamp.fromDate(new Date(dateStr)),
+      heures,
+      description,
+      statut: "en_attente",
+    });
+    document.getElementById("pointage-heures").value = "";
+    document.getElementById("pointage-description").value = "";
+  } catch (err) {
+    console.error(err);
+    alert("Impossible d'enregistrer ce pointage : " + (err.message || err.code || ""));
+  }
+});
+
+// ============================================================
+// Calendrier — Activités, échéances de devis, dates de commande
+// ============================================================
+let calDate = new Date();
+calDate.setDate(1);
+
+function memeJour(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function evenementsDuJour(jourDate) {
+  const evts = [];
+  ACTIVITES_DATA.forEach((a) => {
+    if (a.dateEcheance && memeJour(dateToJsDate(a.dateEcheance), jourDate)) {
+      evts.push({ type: a.type, titre: a.titre, detail: a.cibleId ? nomCible(a.cibleType, a.cibleId) : "", categorie: "activite" });
+    }
+  });
+  DEVIS_DATA.forEach((d) => {
+    if (d.statut === "envoye" && d.dateValidite && memeJour(dateToJsDate(d.dateValidite), jourDate)) {
+      evts.push({ type: "devis", titre: `Devis ${d.reference} — expire`, detail: "", categorie: "devis" });
+    }
+  });
+  COMMANDES_DATA.forEach((c) => {
+    if (c.dateCommande && memeJour(dateToJsDate(c.dateCommande), jourDate)) {
+      evts.push({ type: "commande", titre: `Commande ${c.numero}`, detail: getProspectNom(c.prospectId), categorie: "commande" });
+    }
+  });
+  return evts;
+}
+
+function classeDot(type) {
+  const map = { appel: "cal-dot-appel", email: "cal-dot-email", reunion: "cal-dot-reunion", tache: "cal-dot-tache", personnalisee: "cal-dot-tache", devis: "cal-dot-devis", commande: "cal-dot-commande" };
+  return map[type] || "cal-dot-tache";
+}
+
+function renderCalendrier() {
+  const grid = document.getElementById("cal-grid");
+  const label = document.getElementById("cal-mois-label");
+  if (!grid || !label) return;
+
+  const annee = calDate.getFullYear();
+  const mois = calDate.getMonth();
+  label.textContent = calDate.toLocaleDateString("fr-BE", { month: "long", year: "numeric" });
+
+  const premierJourSemaine = (new Date(annee, mois, 1).getDay() + 6) % 7; // lundi = 0
+  const nbJours = new Date(annee, mois + 1, 0).getDate();
+  const aujourdhui = new Date();
+
+  const noms = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  let html = noms.map((n) => `<div class="cal-daynames">${n}</div>`).join("");
+
+  for (let i = 0; i < premierJourSemaine; i++) html += `<div class="cal-day cal-empty"></div>`;
+
+  for (let jour = 1; jour <= nbJours; jour++) {
+    const jourDate = new Date(annee, mois, jour);
+    const evts = evenementsDuJour(jourDate);
+    const estAujourdhui = memeJour(jourDate, aujourdhui);
+    html += `
+      <div class="cal-day ${estAujourdhui ? "cal-today" : ""}" data-jour="${jour}">
+        <div class="cal-daynum">${jour}</div>
+        <div class="cal-dots">${evts.slice(0, 6).map((e) => `<span class="cal-dot ${classeDot(e.type)}" title="${e.titre}"></span>`).join("")}</div>
+      </div>`;
+  }
+
+  grid.innerHTML = html;
+  grid.querySelectorAll(".cal-day[data-jour]").forEach((el) => {
+    el.addEventListener("click", () => afficherJourCalendrier(parseInt(el.dataset.jour, 10)));
+  });
+
+  // Sélectionne aujourd'hui par défaut si on est dans le mois affiché
+  if (annee === aujourdhui.getFullYear() && mois === aujourdhui.getMonth()) afficherJourCalendrier(aujourdhui.getDate());
+  else document.getElementById("cal-jour-detail").innerHTML = "";
+}
+
+function afficherJourCalendrier(jour) {
+  const jourDate = new Date(calDate.getFullYear(), calDate.getMonth(), jour);
+  const evts = evenementsDuJour(jourDate);
+  const detail = document.getElementById("cal-jour-detail");
+  detail.innerHTML = `
+    <div class="cal-jour-card">
+      <h2 style="font-size:15px; margin-bottom:10px;">${jourDate.toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long" })}</h2>
+      ${evts.length ? evts.map((e) => `
+        <div class="cal-event"><span class="cal-dot ${classeDot(e.type)}" style="margin-right:8px;"></span><strong>${e.titre}</strong>${e.detail ? " — " + e.detail : ""}</div>
+      `).join("") : `<p class="required-note">Rien de prévu ce jour-là.</p>`}
+    </div>`;
+}
+
+document.getElementById("cal-prev")?.addEventListener("click", () => {
+  calDate.setMonth(calDate.getMonth() - 1);
+});
+document.getElementById("cal-next")?.addEventListener("click", () => {
+  calDate.setMonth(calDate.getMonth() + 1);
+});
+
+function renderNotifications() {
+  const list = document.getElementById("notifications-list");
+  const badge = document.getElementById("notif-count");
+  if (!list) return;
+
+  const notifs = [];
+  const maintenant = Date.now();
+
+  // ---- Offres en retard à une étape du pipeline ----
+  OFFRES_DATA.forEach((o) => {
+    if (o.statut !== "en_cours" || o.etapePipeline === "client_actif") return;
+    const historique = o.historiqueEtapes || [];
+    const derniere = historique.length ? dateToJsDate(historique[historique.length - 1].date) : null;
+    const delai = DELAIS_DATA[o.etapePipeline];
+    const jours = derniere ? Math.floor((maintenant - derniere.getTime()) / 86400000) : null;
+    if (delai != null && jours != null && jours > delai) {
+      notifs.push({
+        icone: "⏰", type: "Offre en retard",
+        titre: `${o.numero || o.id} (${getProspectNom(o.prospectId)}) — ${jours} j sans mouvement à l'étape "${STAGES.find((s) => s.key === o.etapePipeline)?.label || o.etapePipeline}"`,
+        vue: "pipeline",
+      });
+    }
+  });
+
+  // ---- Devis envoyés expirés ----
+  DEVIS_DATA.forEach((d) => {
+    if (d.statut !== "envoye" || !d.dateValidite) return;
+    if (dateToJsDate(d.dateValidite).getTime() < maintenant) {
+      notifs.push({
+        icone: "📄", type: "Devis expiré",
+        titre: `${d.reference} — validité dépassée, à relancer ou clôturer`,
+        vue: "devis",
+      });
+    }
+  });
+
+  // ---- Activités en retard ----
+  ACTIVITES_DATA.forEach((a) => {
+    if (a.statut !== "a_faire" || !a.dateEcheance) return;
+    if (dateToJsDate(a.dateEcheance).getTime() < maintenant) {
+      notifs.push({
+        icone: "✅", type: "Activité en retard",
+        titre: `${LABELS_TYPE_ACTIVITE[a.type] || a.type} — "${a.titre}" (échéance dépassée)`,
+        vue: "activites",
+      });
+    }
+  });
+
+  // ---- Prospects sans offre depuis trop longtemps (à relancer) ----
+  const seuilProspect = DELAIS_DATA["prospect_inactif"] || 7;
+  PROSPECTS_DATA.forEach((p) => {
+    if (p.statut !== "prospect" || !p.dateCreation) return;
+    const aUneOffre = OFFRES_DATA.some((o) => o.prospectId === p.id);
+    if (aUneOffre) return;
+    const jours = Math.floor((maintenant - dateToJsDate(p.dateCreation).getTime()) / 86400000);
+    if (jours > seuilProspect) {
+      notifs.push({
+        icone: "📞", type: "Prospect à relancer",
+        titre: `${p.raisonSociale || p.nom} — aucune offre depuis ${jours} j`,
+        vue: "prospects",
+      });
+    }
+  });
+
+  // ---- Commandes en attente de réception depuis longtemps (>14 j, seuil fixe) ----
+  COMMANDES_DATA.forEach((c) => {
+    if (c.statut !== "en_attente" || !c.dateCommande) return;
+    const jours = Math.floor((maintenant - dateToJsDate(c.dateCommande).getTime()) / 86400000);
+    if (jours > 14) {
+      notifs.push({
+        icone: "📦", type: "Réception en attente",
+        titre: `${c.numero} — commandée depuis ${jours} j, réception non confirmée`,
+        vue: "commandes",
+      });
+    }
+  });
+
+  if (badge) {
+    if (notifs.length > 0) { badge.style.display = "inline-block"; badge.textContent = notifs.length; }
+    else badge.style.display = "none";
+  }
+
+  list.innerHTML = notifs.length
+    ? notifs.map((n) => `
+        <div class="notif-item" data-vue="${n.vue}">
+          <span class="notif-icon">${n.icone}</span>
+          <div>
+            <div class="notif-titre">${n.titre}</div>
+            <div class="notif-meta">${n.type}</div>
+          </div>
+        </div>
+      `).join("")
+    : `<p class="notif-empty">Rien à signaler pour l'instant 👍</p>`;
+
+  list.querySelectorAll(".notif-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      document.querySelectorAll(".nav-item[data-view]").forEach((i) => i.classList.remove("active"));
+      document.querySelector(`.nav-item[data-view="${el.dataset.vue}"]`)?.classList.add("active");
+      document.querySelectorAll("main > section").forEach((s) => (s.style.display = "none"));
+      document.getElementById("view-" + el.dataset.vue).style.display = "block";
+    });
+  });
 }
 
 function renderReporting() {
@@ -355,20 +671,40 @@ function renderReporting() {
 function renderProspects() {
   const tbody = document.querySelector("#prospects-table tbody");
   if (!tbody) return;
-  tbody.innerHTML = PROSPECTS_DATA.map((p) => `
+  tbody.innerHTML = PROSPECTS_DATA.map((p) => {
+    const principal = p.responsablePrincipalUid ? USERS_DATA.find((u) => u.id === p.responsablePrincipalUid)?.nom : null;
+    const respTexte = principal ? `${principal} ★, ${nomsResponsables((p.responsablesUids || []).filter((u) => u !== p.responsablePrincipalUid))}`.replace(/,\s*$/, "") : nomsResponsables(p.responsablesUids);
+    return `
     <tr>
       <td>${p.raisonSociale || p.nom || "—"}</td>
       <td>${p.type === "entreprise" ? "Entreprise" : "Particulier"}</td>
       <td>${p.email || "—"}</td>
       <td>${p.telephone || "—"}</td>
       <td><span class="tag ${p.statut === "client" ? "tag-client" : "tag-prospect"}">${p.statut === "client" ? "Client" : "Prospect"}</span></td>
-      <td>${nomsResponsables(p.responsablesUids)}</td>
+      <td>${respTexte}</td>
       <td>${p.portailUid ? '<span class="tag tag-client">Actif</span>' : `<button class="btn btn-secondary btn-give-portal" data-id="${p.id}" style="padding:5px 10px;font-size:12px;">Donner accès</button>`}</td>
-    </tr>
-  `).join("");
+      <td>
+        <button class="btn btn-secondary btn-edit-prospect" data-id="${p.id}" style="padding:5px 10px;font-size:12px;">Modifier</button>
+        ${p.statut === "client" ? "" : `<button class="btn btn-secondary btn-to-client" data-id="${p.id}" style="padding:5px 10px;font-size:12px;">Transformer en client</button>`}
+      </td>
+    </tr>`;
+  }).join("");
 
   document.querySelectorAll(".btn-give-portal").forEach((btn) => {
     btn.addEventListener("click", () => ouvrirFormPortail(btn.dataset.id));
+  });
+  document.querySelectorAll(".btn-edit-prospect").forEach((btn) => {
+    btn.addEventListener("click", () => ouvrirFormProspect(btn.dataset.id));
+  });
+  document.querySelectorAll(".btn-to-client").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await db.collection("prospects").doc(btn.dataset.id).update({ statut: "client" });
+      } catch (err) {
+        console.error(err);
+        alert("Impossible de transformer ce prospect en client.");
+      }
+    });
   });
 }
 
@@ -484,6 +820,8 @@ function renderLeads() {
   });
 
   renderReporting();
+  renderNotifications();
+  renderCalendrier();
 }
 
 async function convertirLead(leadId) {
@@ -785,11 +1123,77 @@ function nomsResponsables(uids) {
   return uids.map((uid) => USERS_DATA.find((u) => u.id === uid)?.nom || uid).join(", ");
 }
 
+// ---------- Numérotation automatique annuelle (transaction Firestore) ----------
+// Compteur par préfixe+année (ex. "offres_2026") : se remet donc à 0 tout seul
+// chaque nouvelle année, sans action manuelle.
+async function genererNumeroAnnuel(prefixeCompteur, largeur) {
+  const annee = new Date().getFullYear();
+  const ref = db.collection("compteurs").doc(`${prefixeCompteur}_${annee}`);
+  const nouveau = await db.runTransaction(async (tx) => {
+    const doc = await tx.get(ref);
+    const dernier = doc.exists ? doc.data().dernier : 0;
+    const n = dernier + 1;
+    tx.set(ref, { dernier: n, annee }, { merge: true });
+    return n;
+  });
+  return { annee, numero: String(nouveau).padStart(largeur, "0") };
+}
+
+// Remplit un <select> "responsable principal" avec les uids actuellement
+// cochés dans le <select multiple> correspondant
+function synchroniserPrincipal(multipleId, principalId, dejaChoisi) {
+  const { responsablesUids } = selectionMultiple(multipleId);
+  const select = document.getElementById(principalId);
+  if (!select) return;
+  select.innerHTML = responsablesUids.map((uid) => `<option value="${uid}">${USERS_DATA.find((u) => u.id === uid)?.nom || uid}</option>`).join("");
+  if (dejaChoisi && responsablesUids.includes(dejaChoisi)) select.value = dejaChoisi;
+}
+document.getElementById("prospect-responsable")?.addEventListener("change", () => synchroniserPrincipal("prospect-responsable", "prospect-principal"));
+document.getElementById("offre-responsable")?.addEventListener("change", () => synchroniserPrincipal("offre-responsable", "offre-principal"));
+
+// ---------- Calculs TVA en direct (HTVA -> TVA -> TTC) ----------
+function brancherCalculTVA(idHTVA, idTaux, idMontantTVA, idTTC) {
+  const recalculer = () => {
+    const htva = parseFloat(document.getElementById(idHTVA).value) || 0;
+    const taux = parseFloat(document.getElementById(idTaux).value) || 0;
+    const montantTVA = htva * (taux / 100);
+    document.getElementById(idMontantTVA).value = montantTVA.toFixed(2) + " €";
+    document.getElementById(idTTC).value = (htva + montantTVA).toFixed(2) + " €";
+  };
+  document.getElementById(idHTVA)?.addEventListener("input", recalculer);
+  document.getElementById(idTaux)?.addEventListener("change", recalculer);
+  return recalculer;
+}
+const recalculerOffreTVA = brancherCalculTVA("offre-htva", "offre-tva", "offre-montant-tva", "offre-ttc");
+const recalculerDevisTVA = brancherCalculTVA("devis-htva", "devis-tva", "devis-montant-tva", "devis-ttc");
+
+let prospectEnEdition = null;
+
 document.getElementById("btn-new-prospect")?.addEventListener("click", () => {
+  prospectEnEdition = null;
+  document.getElementById("prospect-form-titre").textContent = "Nouveau prospect";
+  ["prospect-nom", "prospect-email", "prospect-telephone", "prospect-source"].forEach((id) => (document.getElementById(id).value = ""));
+  document.getElementById("prospect-type").value = "entreprise";
   document.getElementById("form-new-prospect").style.display = "block";
   const respSelect = document.getElementById("prospect-responsable");
-  if (respSelect && currentScope === "perso") [...respSelect.options].forEach((o) => (o.selected = o.value === currentUser.uid));
+  [...respSelect.options].forEach((o) => (o.selected = currentScope === "perso" && o.value === currentUser.uid));
+  synchroniserPrincipal("prospect-responsable", "prospect-principal");
 });
+function ouvrirFormProspect(prospectId) {
+  const p = PROSPECTS_DATA.find((x) => x.id === prospectId);
+  if (!p) return;
+  prospectEnEdition = p;
+  document.getElementById("prospect-form-titre").textContent = "Modifier le prospect";
+  document.getElementById("prospect-nom").value = p.raisonSociale || p.nom || "";
+  document.getElementById("prospect-type").value = p.type || "entreprise";
+  document.getElementById("prospect-email").value = p.email || "";
+  document.getElementById("prospect-telephone").value = p.telephone || "";
+  document.getElementById("prospect-source").value = p.source || "";
+  const respSelect = document.getElementById("prospect-responsable");
+  [...respSelect.options].forEach((o) => (o.selected = (p.responsablesUids || []).includes(o.value)));
+  synchroniserPrincipal("prospect-responsable", "prospect-principal", p.responsablePrincipalUid);
+  document.getElementById("form-new-prospect").style.display = "block";
+}
 document.getElementById("btn-cancel-prospect")?.addEventListener("click", () => {
   document.getElementById("form-new-prospect").style.display = "none";
 });
@@ -797,64 +1201,115 @@ document.getElementById("btn-save-prospect")?.addEventListener("click", async ()
   const nom = document.getElementById("prospect-nom").value;
   if (!nom) return;
   const { responsablesUids, equipeIds } = selectionMultiple("prospect-responsable");
+  const responsablePrincipalUid = document.getElementById("prospect-principal").value || responsablesUids[0];
+
+  const donnees = {
+    raisonSociale: nom,
+    type: document.getElementById("prospect-type").value,
+    email: document.getElementById("prospect-email").value,
+    telephone: document.getElementById("prospect-telephone").value,
+    source: document.getElementById("prospect-source").value,
+    responsablesUids,
+    equipeIds,
+    responsablePrincipalUid,
+  };
 
   try {
-    await db.collection("prospects").add({
-      raisonSociale: nom,
-      type: document.getElementById("prospect-type").value,
-      email: document.getElementById("prospect-email").value,
-      telephone: document.getElementById("prospect-telephone").value,
-      source: document.getElementById("prospect-source").value,
-      statut: "prospect",
-      responsablesUids,
-      equipeIds,
-      dateCreation: firebase.firestore.Timestamp.now(),
-    });
+    if (prospectEnEdition) {
+      await db.collection("prospects").doc(prospectEnEdition.id).update(donnees);
+    } else {
+      await db.collection("prospects").add({ ...donnees, statut: "prospect", dateCreation: firebase.firestore.Timestamp.now() });
+    }
     document.getElementById("form-new-prospect").style.display = "none";
-    ["prospect-nom", "prospect-email", "prospect-telephone", "prospect-source"].forEach((id) => (document.getElementById(id).value = ""));
+    prospectEnEdition = null;
   } catch (err) {
     console.error(err);
-    alert("Impossible de créer ce prospect.");
+    alert("Impossible d'enregistrer ce prospect : " + (err.message || err.code || ""));
   }
 });
 
+let offreEnEdition = null;
+
 document.getElementById("btn-new-offre")?.addEventListener("click", () => {
+  offreEnEdition = null;
+  document.getElementById("offre-form-titre").textContent = "Nouvelle offre";
+  document.getElementById("offre-titre").value = "";
+  document.getElementById("offre-htva").value = "";
+  document.getElementById("offre-tva").value = "21";
+  document.getElementById("offre-probabilite").value = "50";
+  recalculerOffreTVA();
   document.getElementById("form-new-offre").style.display = "block";
   const respSelect = document.getElementById("offre-responsable");
-  if (respSelect && currentScope === "perso") [...respSelect.options].forEach((o) => (o.selected = o.value === currentUser.uid));
+  [...respSelect.options].forEach((o) => (o.selected = currentScope === "perso" && o.value === currentUser.uid));
   const prospectSelect = document.getElementById("offre-prospect");
   if (prospectSelect) prospectSelect.innerHTML = PROSPECTS_DATA.map((p) => `<option value="${p.id}">${p.raisonSociale || p.nom}</option>`).join("");
+  synchroniserPrincipal("offre-responsable", "offre-principal");
 });
+function ouvrirFormOffre(offreId) {
+  const o = getOffre(offreId);
+  if (!o) return;
+  offreEnEdition = o;
+  document.getElementById("offre-form-titre").textContent = "Modifier l'offre " + (o.numero || "");
+  const prospectSelect = document.getElementById("offre-prospect");
+  prospectSelect.innerHTML = PROSPECTS_DATA.map((p) => `<option value="${p.id}">${p.raisonSociale || p.nom}</option>`).join("");
+  prospectSelect.value = o.prospectId;
+  document.getElementById("offre-titre").value = o.titre || "";
+  document.getElementById("offre-htva").value = o.montantHTVA || o.montantEstime || "";
+  document.getElementById("offre-tva").value = o.tauxTVA ?? "21";
+  document.getElementById("offre-probabilite").value = o.probabilite ?? 50;
+  recalculerOffreTVA();
+  const respSelect = document.getElementById("offre-responsable");
+  [...respSelect.options].forEach((opt) => (opt.selected = (o.responsablesUids || []).includes(opt.value)));
+  synchroniserPrincipal("offre-responsable", "offre-principal", o.responsablePrincipalUid);
+  document.getElementById("form-new-offre").style.display = "block";
+}
 document.getElementById("btn-cancel-offre")?.addEventListener("click", () => {
   document.getElementById("form-new-offre").style.display = "none";
 });
 document.getElementById("btn-save-offre")?.addEventListener("click", async () => {
-  const numero = document.getElementById("offre-numero").value;
   const prospectId = document.getElementById("offre-prospect").value;
-  if (!numero || !prospectId) {
-    alert("Le numéro et le prospect sont obligatoires.");
+  if (!prospectId) {
+    alert("Le prospect est obligatoire.");
     return;
   }
   const { responsablesUids, equipeIds } = selectionMultiple("offre-responsable");
+  const responsablePrincipalUid = document.getElementById("offre-principal").value || responsablesUids[0];
+  const montantHTVA = parseFloat(document.getElementById("offre-htva").value) || 0;
+  const tauxTVA = parseFloat(document.getElementById("offre-tva").value) || 0;
+  const montantTVA = montantHTVA * (tauxTVA / 100);
+
+  const donnees = {
+    titre: document.getElementById("offre-titre").value,
+    prospectId,
+    responsablesUids,
+    equipeIds,
+    responsablePrincipalUid,
+    montantHTVA,
+    tauxTVA,
+    montantTVA,
+    montantTTC: montantHTVA + montantTVA,
+    montantEstime: montantHTVA, // conservé pour le calcul du reporting (revenu pondéré)
+    probabilite: parseInt(document.getElementById("offre-probabilite").value, 10) || 0,
+  };
+
   try {
-    await db.collection("offres").add({
-      numero,
-      titre: document.getElementById("offre-titre").value,
-      prospectId,
-      responsablesUids,
-      equipeIds,
-      montantEstime: parseFloat(document.getElementById("offre-montant").value) || 0,
-      probabilite: parseInt(document.getElementById("offre-probabilite").value, 10) || 0,
-      etapePipeline: "nouveau",
-      statut: "en_cours",
-      historiqueEtapes: [{ etape: "nouveau", date: firebase.firestore.Timestamp.now() }],
-    });
+    if (offreEnEdition) {
+      await db.collection("offres").doc(offreEnEdition.id).update(donnees);
+    } else {
+      const { annee, numero } = await genererNumeroAnnuel("offres", 5);
+      await db.collection("offres").add({
+        ...donnees,
+        numero: `OFF-${annee}/${numero}`,
+        etapePipeline: "nouveau",
+        statut: "en_cours",
+        historiqueEtapes: [{ etape: "nouveau", date: firebase.firestore.Timestamp.now() }],
+      });
+    }
     document.getElementById("form-new-offre").style.display = "none";
-    document.getElementById("offre-numero").value = "";
-    document.getElementById("offre-titre").value = "";
+    offreEnEdition = null;
   } catch (err) {
     console.error(err);
-    alert("Impossible de créer cette offre.");
+    alert("Impossible d'enregistrer cette offre : " + (err.message || err.code || ""));
   }
 });
 
@@ -872,11 +1327,11 @@ function renderDevis() {
   if (!tbody) return;
   tbody.innerHTML = DEVIS_DATA.map((d) => {
     const offre = getOffre(d.offreId);
-    const factureExistante = FACTURES_DATA.find((f) => f.devisRef?.devisId === d.id);
-    let colFacture = "—";
-    if (factureExistante) colFacture = `<span class="tag tag-client">${factureExistante.numero}</span>`;
+    const commandeExistante = COMMANDES_DATA.find((c) => c.devisId === d.id);
+    let colCommande = "—";
+    if (commandeExistante) colCommande = `<span class="tag ${commandeExistante.statut === "receptionnee" ? "tag-client" : "tag-prospect"}">${commandeExistante.numero}</span>`;
     else if (d.statut === "accepte" && currentScope === "tout")
-      colFacture = `<button class="btn btn-secondary btn-generer-facture" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Générer facture</button>`;
+      colCommande = `<button class="btn btn-secondary btn-creer-commande" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Créer bon de commande</button>`;
     return `
     <tr>
       <td>${d.reference || d.id}</td>
@@ -885,13 +1340,13 @@ function renderDevis() {
       <td>${d.dateEmission ? dateToJsDate(d.dateEmission).toLocaleDateString("fr-BE") : "—"}</td>
       <td>${(d.totalTTC || 0).toFixed(2)} €</td>
       <td><span class="tag ${d.statut === "accepte" ? "tag-client" : "tag-prospect"}">${LABELS_STATUT_DEVIS[d.statut] || d.statut}</span></td>
-      <td>${colFacture}</td>
+      <td>${colCommande}</td>
       <td>${d.statut === "accepte" ? "" : `<button class="btn btn-secondary btn-accept-devis" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Marquer accepté</button>`}</td>
     </tr>`;
   }).join("");
 
-  document.querySelectorAll(".btn-generer-facture").forEach((btn) => {
-    btn.addEventListener("click", () => genererFacture(btn.dataset.offre, btn.dataset.devis));
+  document.querySelectorAll(".btn-creer-commande").forEach((btn) => {
+    btn.addEventListener("click", () => creerCommande(btn.dataset.offre, btn.dataset.devis));
   });
 
   document.querySelectorAll(".btn-accept-devis").forEach((btn) => {
@@ -911,33 +1366,114 @@ function renderDevis() {
   });
 }
 
-async function genererFacture(offreId, devisId) {
+// ============================================================
+// Commandes (bon de commande + réception) — entre le devis accepté et la facture
+// ============================================================
+const LABELS_STATUT_COMMANDE = { en_attente: "En attente de réception", receptionnee: "Réceptionnée" };
+
+async function creerCommande(offreId, devisId) {
   const devis = DEVIS_DATA.find((d) => d.id === devisId);
   const offre = getOffre(offreId);
   if (!devis || !offre) return;
+  try {
+    const { annee, numero } = await genererNumeroAnnuel("commandes", 3);
+    await db.collection("commandes").add({
+      numero: `BC-${annee}-${numero}`,
+      offreId,
+      devisId,
+      prospectId: offre.prospectId,
+      montantHTVA: devis.montantHTVA || 0,
+      tauxTVA: devis.tauxTVA || 0,
+      montantTVA: devis.montantTVA || 0,
+      montantTTC: devis.totalTTC || 0,
+      statut: "en_attente",
+      dateCommande: firebase.firestore.Timestamp.now(),
+      responsablesUids: devis.responsablesUids || offre.responsablesUids || [],
+      equipeIds: devis.equipeIds || offre.equipeIds || [],
+    });
+  } catch (err) {
+    console.error(err);
+    alert("Impossible de créer le bon de commande : " + (err.message || err.code || ""));
+  }
+}
 
-  const compteur = FACTURES_DATA.length + 1;
-  const numero = `FAC-${new Date().getFullYear()}-${String(compteur).padStart(3, "0")}`;
+function renderCommandes() {
+  const tbody = document.querySelector("#commandes-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = COMMANDES_DATA.map((c) => {
+    const devis = DEVIS_DATA.find((d) => d.id === c.devisId);
+    const factureExistante = FACTURES_DATA.find((f) => f.commandeId === c.id);
+    let action = "—";
+    if (factureExistante) action = `<span class="tag tag-client">${factureExistante.numero}</span>`;
+    else if (c.statut === "en_attente") action = `<button class="btn btn-secondary btn-confirmer-reception" data-id="${c.id}" style="padding:5px 10px;font-size:12px;">Confirmer réception</button>`;
+    else if (c.statut === "receptionnee" && currentScope === "tout") action = `<button class="btn btn-primary btn-generer-facture-cmd" data-id="${c.id}" style="padding:5px 10px;font-size:12px;">Générer facture</button>`;
+    return `
+    <tr>
+      <td>${c.numero}</td>
+      <td>${devis?.reference || c.devisId}</td>
+      <td>${getProspectNom(c.prospectId)}</td>
+      <td>${(c.montantTTC || 0).toFixed(2)} €</td>
+      <td><span class="tag ${c.statut === "receptionnee" ? "tag-client" : "tag-prospect"}">${LABELS_STATUT_COMMANDE[c.statut] || c.statut}</span></td>
+      <td>${action}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="6" class="required-note">Aucune commande pour l'instant — elles se créent depuis un devis accepté (onglet Devis).</td></tr>`;
+
+  document.querySelectorAll(".btn-confirmer-reception").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await db.collection("commandes").doc(btn.dataset.id).update({
+          statut: "receptionnee",
+          reception: { date: firebase.firestore.Timestamp.now(), confirmePar: currentUser.uid },
+        });
+      } catch (err) {
+        console.error(err);
+        alert("Impossible de confirmer la réception : " + (err.message || err.code || ""));
+      }
+    });
+  });
+  document.querySelectorAll(".btn-generer-facture-cmd").forEach((btn) => {
+    btn.addEventListener("click", () => genererFacture(btn.dataset.id));
+  });
+  renderDevis(); // la colonne "Commande" du tableau Devis dépend de COMMANDES_DATA
+  remplirSelectCommandes();
+  renderNotifications();
+  renderCalendrier();
+}
+
+async function genererFacture(commandeId) {
+  const commande = COMMANDES_DATA.find((c) => c.id === commandeId);
+  if (!commande) return;
+  const devis = DEVIS_DATA.find((d) => d.id === commande.devisId);
+  const offre = getOffre(commande.offreId);
+
+  const { annee, numero: num } = await genererNumeroAnnuel("factures", 3);
+  const numero = `FAC-${annee}-${num}`;
   const dateFacturation = firebase.firestore.Timestamp.now();
   const dateEcheance = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 86400000));
 
   try {
     await db.collection("factures").add({
       numero,
-      prospectId: offre.prospectId,
-      devisRef: { offreId, devisId },
+      prospectId: commande.prospectId,
+      devisRef: { offreId: commande.offreId, devisId: commande.devisId },
+      commandeId,
       dateFacturation,
       dateEcheance,
-      totalTTC: devis.totalTTC || 0,
+      montantHTVA: commande.montantHTVA || 0,
+      tauxTVA: commande.tauxTVA || 0,
+      montantTVA: commande.montantTVA || 0,
+      totalTTC: commande.montantTTC || 0,
       statutPaiement: "a_payer",
       exportBob: { exportee: false },
-      responsablesUids: devis.responsablesUids || offre.responsablesUids || [],
-      equipeIds: devis.equipeIds || offre.equipeIds || [],
+      responsablesUids: commande.responsablesUids || devis?.responsablesUids || offre?.responsablesUids || [],
+      equipeIds: commande.equipeIds || devis?.equipeIds || offre?.equipeIds || [],
     });
-    await db.collection("offres").doc(offreId).update({
-      etapePipeline: "facture",
-      historiqueEtapes: firebase.firestore.FieldValue.arrayUnion({ etape: "facture", date: firebase.firestore.Timestamp.now() }),
-    });
+    if (offre) {
+      await db.collection("offres").doc(commande.offreId).update({
+        etapePipeline: "facture",
+        historiqueEtapes: firebase.firestore.FieldValue.arrayUnion({ etape: "facture", date: firebase.firestore.Timestamp.now() }),
+      });
+    }
   } catch (err) {
     console.error(err);
     alert("Impossible de générer la facture.");
@@ -945,29 +1481,50 @@ async function genererFacture(offreId, devisId) {
 }
 
 document.getElementById("btn-new-devis")?.addEventListener("click", () => {
+  if (OFFRES_DATA.length === 0) {
+    alert("Aucune offre disponible pour l'instant. Crée d'abord une offre dans Pipeline (\"+ Nouvelle offre\") avant de pouvoir lui associer un devis.");
+    return;
+  }
+  remplirSelectOffres();
+  const offreId = document.getElementById("devis-offre").value;
+  prefillDevisDepuisOffre(offreId);
+  document.getElementById("devis-doc-note").value = "";
   document.getElementById("form-new-devis").style.display = "block";
 });
+function prefillDevisDepuisOffre(offreId) {
+  const offre = getOffre(offreId);
+  document.getElementById("devis-htva").value = offre?.montantHTVA ?? offre?.montantEstime ?? "";
+  document.getElementById("devis-tva").value = offre?.tauxTVA ?? "21";
+  recalculerDevisTVA();
+}
+document.getElementById("devis-offre")?.addEventListener("change", (e) => prefillDevisDepuisOffre(e.target.value));
 document.getElementById("btn-cancel-devis")?.addEventListener("click", () => {
   document.getElementById("form-new-devis").style.display = "none";
 });
 document.getElementById("btn-save-devis")?.addEventListener("click", async () => {
   const offreId = document.getElementById("devis-offre").value;
-  const reference = document.getElementById("devis-reference").value;
-  const montant = parseFloat(document.getElementById("devis-montant").value) || 0;
+  const montantHTVA = parseFloat(document.getElementById("devis-htva").value) || 0;
+  const tauxTVA = parseFloat(document.getElementById("devis-tva").value) || 0;
+  const montantTVA = montantHTVA * (tauxTVA / 100);
   const note = document.getElementById("devis-doc-note").value;
 
-  if (!offreId || !reference) {
-    alert("Merci de renseigner l'offre liée et une référence.");
+  if (!offreId) {
+    alert("Merci de sélectionner l'offre liée.");
     return;
   }
 
   try {
     const offre = getOffre(offreId);
+    const { annee, numero } = await genererNumeroAnnuel("devis", 3);
     await db.collection("offres").doc(offreId).collection("devis").add({
-      reference,
-      totalTTC: montant,
+      reference: `DEV-${annee}-${numero}`,
+      montantHTVA,
+      tauxTVA,
+      montantTVA,
+      totalTTC: montantHTVA + montantTVA,
       statut: "brouillon",
       dateEmission: firebase.firestore.Timestamp.now(),
+      dateValidite: firebase.firestore.Timestamp.fromDate(new Date(Date.now() + (DELAIS_DATA["devis_validite"] || 30) * 86400000)),
       documentationTechnique: note ? [{ description: note }] : [],
       prospectId: offre?.prospectId || null,
       // Hérités de l'offre pour que les règles de portée (perso/équipe) s'appliquent aussi au devis
@@ -977,12 +1534,10 @@ document.getElementById("btn-save-devis")?.addEventListener("click", async () =>
     // NOTE : Firebase Storage est désactivé pour l'instant (décision d'Hélène,
     // le plan Blaze n'est pas activé) — pas de fichiers joints, note texte seulement.
     document.getElementById("form-new-devis").style.display = "none";
-    document.getElementById("devis-reference").value = "";
-    document.getElementById("devis-montant").value = "";
     document.getElementById("devis-doc-note").value = "";
   } catch (err) {
     console.error(err);
-    alert("Impossible d'enregistrer ce devis.");
+    alert("Impossible d'enregistrer ce devis : " + (err.message || err.code || "erreur inconnue") + "\n\nSi c'est écrit \"Missing or insufficient permissions\", vérifie que les règles Firestore ont bien été déployées (firebase deploy --only firestore:rules).");
   }
 });
 
@@ -1085,12 +1640,26 @@ function renderRappels() {
 function renderDelais() {
   const wrap = document.getElementById("delays-config");
   if (!wrap) return;
-  wrap.innerHTML = STAGES.filter((s) => s.key !== "client_actif").map((s) => `
+  const lignesEtapes = STAGES.filter((s) => s.key !== "client_actif").map((s) => `
     <div class="delay-row">
       <span>${s.label}</span>
       <span><input type="number" value="${DELAIS_DATA[s.key] ?? ""}" min="1" data-etape="${s.key}" class="delay-input"> jours</span>
     </div>
-  `).join("") + `<button class="btn btn-primary" id="btn-save-delais" style="margin-top:14px;">Enregistrer les délais</button>`;
+  `).join("");
+  const ligneProspect = `
+    <div class="delay-row">
+      <span>Prospect sans offre (à relancer)</span>
+      <span><input type="number" value="${DELAIS_DATA["prospect_inactif"] ?? 7}" min="1" data-etape="prospect_inactif" class="delay-input"> jours</span>
+    </div>
+  `;
+  const ligneDevis = `
+    <div class="delay-row">
+      <span>Validité d'un devis envoyé</span>
+      <span><input type="number" value="${DELAIS_DATA["devis_validite"] ?? 30}" min="1" data-etape="devis_validite" class="delay-input"> jours</span>
+    </div>
+  `;
+  wrap.innerHTML = lignesEtapes + ligneProspect + ligneDevis +
+    `<button class="btn btn-primary" id="btn-save-delais" style="margin-top:14px;">Enregistrer les délais</button>`;
 
   document.getElementById("btn-save-delais")?.addEventListener("click", async () => {
     const inputs = document.querySelectorAll(".delay-input");
@@ -1164,6 +1733,8 @@ function renderUsers() {
   }
 
   renderReporting();
+  renderNotifications();
+  renderCalendrier();
 }
 
 document.getElementById("btn-new-user")?.addEventListener("click", () => {

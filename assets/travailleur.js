@@ -7,7 +7,9 @@
 
 let currentUser = null;
 let STOCK_DATA = [];
-let PROJETS_DATA = []; // simplifié : offres actives, sans les données commerciales
+// Liste des projets/offres sur lesquels un travailleur peut pointer
+// (nom simplifié, sans les infos commerciales du CRM)
+let PROJETS_DATA = []; // une commande = un projet, + "Tâches internes"
 
 const LABELS_ROLE = { superadmin: "Super Admin", admin: "Admin", travailleur: "Travailleur" };
 
@@ -56,11 +58,10 @@ function appliquerModulesAutorises(modules) {
 document.getElementById("btn-logout")?.addEventListener("click", () => auth.signOut());
 
 function demarrerEcouteurs() {
-  // Liste simplifiée des projets sur lesquels pointer : offres non perdues/abandonnées + une entrée "Tâches internes"
-  db.collection("offres").onSnapshot((snap) => {
-    PROJETS_DATA = snap.docs
-      .filter((d) => !["perdue", "abandonnee"].includes(d.data().statut))
-      .map((d) => ({ id: d.id, nom: d.data().numero || d.id }));
+  // Un projet = une commande (bon de commande), demande d'Hélène — plus une
+  // entrée "Tâches internes" pour ce qui n'est lié à aucune commande précise
+  db.collection("commandes").onSnapshot((snap) => {
+    PROJETS_DATA = snap.docs.map((d) => ({ id: d.id, nom: d.data().numero || d.id }));
     PROJETS_DATA.push({ id: "INTERNE", nom: "Tâches internes / administratif" });
     remplirSelectsProjets();
   });
