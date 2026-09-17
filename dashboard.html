@@ -27,16 +27,20 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-023</div>
+    <div class="version-tag">V01-028</div>
 
     <nav class="nav-group">
+      <div class="nav-item" data-view="notifications"><span class="dot"></span> 🔔 Notifications <span class="notif-count" id="notif-count" style="display:none;">0</span></div>
       <div class="nav-item active" data-view="pipeline"><span class="dot"></span> Offres &amp; Pipeline</div>
       <div class="nav-item" data-view="leads"><span class="dot"></span> Leads</div>
       <div class="nav-item" data-view="prospects"><span class="dot"></span> Prospects</div>
       <div class="nav-item" data-view="devis"><span class="dot"></span> Devis</div>
+      <div class="nav-item" data-view="commandes"><span class="dot"></span> Commandes</div>
       <div class="nav-item" data-view="factures" data-restrict="tout"><span class="dot"></span> Factures</div>
       <div class="nav-item" data-view="stock"><span class="dot"></span> Stock</div>
       <div class="nav-item" data-view="activites"><span class="dot"></span> Activités</div>
+      <div class="nav-item" data-view="pointage"><span class="dot"></span> Mon pointage</div>
+      <div class="nav-item" data-view="calendrier"><span class="dot"></span> Calendrier</div>
       <div class="nav-item" data-view="reporting"><span class="dot"></span> Reporting</div>
       <div class="nav-item" data-view="rappels" data-restrict="tout"><span class="dot"></span> Rappels</div>
       <div class="nav-item" data-view="admin" data-restrict="gestion"><span class="dot"></span> Administration</div>
@@ -46,6 +50,75 @@
   </aside>
 
   <main class="main-content">
+
+    <!-- ===== Vue Calendrier ===== -->
+    <section id="view-calendrier" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Calendrier</h1>
+          <div class="subtitle">Activités, échéances de devis et commandes — sur ta portée de données</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button class="btn btn-secondary" id="cal-prev" style="padding:6px 12px;">←</button>
+          <span id="cal-mois-label" style="font-family:var(--font-display); font-size:18px; min-width:160px; text-align:center; display:inline-block;"></span>
+          <button class="btn btn-secondary" id="cal-next" style="padding:6px 12px;">→</button>
+        </div>
+      </div>
+
+      <div class="cal-legend">
+        <span><span class="cal-dot cal-dot-appel"></span> Appel</span>
+        <span><span class="cal-dot cal-dot-email"></span> Email</span>
+        <span><span class="cal-dot cal-dot-reunion"></span> Réunion</span>
+        <span><span class="cal-dot cal-dot-tache"></span> Tâche</span>
+        <span><span class="cal-dot cal-dot-devis"></span> Devis expire</span>
+        <span><span class="cal-dot cal-dot-commande"></span> Commande</span>
+      </div>
+
+      <div class="cal-grid" id="cal-grid"></div>
+
+      <div id="cal-jour-detail" style="margin-top:20px;"></div>
+    </section>
+
+    <!-- ===== Vue Mon pointage ===== -->
+    <section id="view-pointage" style="display:none;">
+      <div class="page-header">
+        <div><h1>Mon pointage</h1><div class="subtitle">Heures passées sur une commande (= un projet) ou en tâches internes</div></div>
+      </div>
+
+      <div class="panel-form" style="margin-bottom:24px;">
+        <h2>Nouveau pointage</h2>
+        <div class="field"><label class="field-required" for="pointage-commande">Commande / projet</label><select id="pointage-commande"></select></div>
+        <div class="field"><label class="field-required" for="pointage-date">Date</label><input type="date" id="pointage-date"></div>
+        <div class="field"><label class="field-required" for="pointage-heures">Heures passées</label><input type="number" id="pointage-heures" step="0.25" min="0.25" placeholder="ex. 2.5"></div>
+        <div class="field"><label for="pointage-description">Description (optionnel)</label><textarea id="pointage-description"></textarea></div>
+        <button class="btn btn-primary" id="btn-save-pointage">Enregistrer mon pointage</button>
+      </div>
+
+      <h2 style="font-size:16px; margin-bottom:12px;">Mes derniers pointages</h2>
+      <table class="data-table" id="mes-pointages-table">
+        <thead><tr><th>Date</th><th>Commande</th><th>Heures</th><th>Description</th><th>Statut</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div id="toutes-pointages-wrap" style="display:none; margin-top:32px;">
+        <h2 style="font-size:16px; margin-bottom:12px;">Toutes les feuilles de temps (validation)</h2>
+        <table class="data-table" id="toutes-pointages-table">
+          <thead><tr><th>Personne</th><th>Date</th><th>Commande</th><th>Heures</th><th>Statut</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===== Vue Notifications ===== -->
+    <section id="view-notifications" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Notifications</h1>
+          <div class="subtitle">Rappels, délais dépassés et relances à traiter — vue d'ensemble sur ta portée de données</div>
+        </div>
+      </div>
+      <div id="notifications-list"></div>
+    </section>
 
     <!-- ===== Vue Leads ===== -->
     <section id="view-leads" style="display:none;">
@@ -217,13 +290,19 @@
       </div>
 
       <div class="panel-form" id="form-new-offre" style="display:none; margin-bottom:24px;">
-        <h2>Nouvelle offre</h2>
-        <div class="field"><label class="field-required" for="offre-numero">Numéro (unique)</label><input type="text" id="offre-numero" placeholder="ex. OFF-2026-020"></div>
+        <h2 id="offre-form-titre">Nouvelle offre</h2>
+        <p class="required-note">Numéro attribué automatiquement à l'enregistrement (ex. OFF-2026/00001).</p>
         <div class="field"><label class="field-required" for="offre-prospect">Prospect</label><select id="offre-prospect"></select></div>
         <div class="field"><label for="offre-titre">Titre / besoin exprimé</label><input type="text" id="offre-titre"></div>
-        <div class="field"><label for="offre-montant">Montant estimé (€)</label><input type="number" id="offre-montant" step="1" placeholder="ex. 15000"></div>
+        <div class="field"><label for="offre-htva">Montant HTVA (€)</label><input type="number" id="offre-htva" step="0.01" placeholder="ex. 15000"></div>
+        <div class="field"><label for="offre-tva">Taux de TVA</label>
+          <select id="offre-tva"><option value="21">21 %</option><option value="12">12 %</option><option value="6">6 %</option><option value="0">0 %</option></select>
+        </div>
+        <div class="field"><label>Montant TVA</label><input type="text" id="offre-montant-tva" readonly style="background:var(--fog);"></div>
+        <div class="field"><label>Prix TTC</label><input type="text" id="offre-ttc" readonly style="background:var(--fog); font-weight:600;"></div>
         <div class="field"><label for="offre-probabilite">Probabilité de réussite (%)</label><input type="number" id="offre-probabilite" min="0" max="100" step="5" value="50"></div>
         <div class="field"><label class="field-required" for="offre-responsable">Responsable(s)</label><select id="offre-responsable" multiple size="4"></select><p class="required-note">Plusieurs commerciaux possibles (Ctrl/Cmd + clic).</p></div>
+        <div class="field"><label for="offre-principal">Responsable principal</label><select id="offre-principal"></select></div>
         <button class="btn btn-primary" id="btn-save-offre">Créer l'offre</button>
         <button class="btn btn-secondary" id="btn-cancel-offre">Annuler</button>
       </div>
@@ -245,7 +324,7 @@
       </div>
 
       <div class="panel-form" id="form-new-prospect" style="display:none; margin-bottom:24px;">
-        <h2>Nouveau prospect</h2>
+        <h2 id="prospect-form-titre">Nouveau prospect</h2>
         <div class="field"><label class="field-required" for="prospect-nom">Nom / raison sociale</label><input type="text" id="prospect-nom"></div>
         <div class="field"><label for="prospect-type">Type</label>
           <select id="prospect-type"><option value="entreprise">Entreprise</option><option value="particulier">Particulier</option></select>
@@ -254,13 +333,14 @@
         <div class="field"><label for="prospect-telephone">Téléphone</label><input type="tel" id="prospect-telephone"></div>
         <div class="field"><label for="prospect-source">Source</label><input type="text" id="prospect-source" placeholder="site web, recommandation, salon..."></div>
         <div class="field"><label class="field-required" for="prospect-responsable">Responsable(s)</label><select id="prospect-responsable" multiple size="4"></select><p class="required-note">Plusieurs commerciaux possibles (Ctrl/Cmd + clic).</p></div>
+        <div class="field"><label for="prospect-principal">Responsable principal</label><select id="prospect-principal"></select></div>
         <button class="btn btn-primary" id="btn-save-prospect">Créer le prospect</button>
         <button class="btn btn-secondary" id="btn-cancel-prospect">Annuler</button>
       </div>
 
       <table class="data-table" id="prospects-table">
         <thead>
-          <tr><th>Nom</th><th>Type</th><th>Email</th><th>Téléphone</th><th>Statut</th><th>Responsable</th><th>Portail</th></tr>
+          <tr><th>Nom</th><th>Type</th><th>Email</th><th>Téléphone</th><th>Statut</th><th>Responsable(s)</th><th>Portail</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -309,25 +389,25 @@
 
       <table class="data-table" id="devis-table">
         <thead>
-          <tr><th>Référence</th><th>Offre liée</th><th>Client / prospect</th><th>Émis le</th><th>Total TTC</th><th>Statut</th><th>Facture</th><th></th></tr>
+          <tr><th>Référence</th><th>Offre liée</th><th>Client / prospect</th><th>Émis le</th><th>Total TTC</th><th>Statut</th><th>Commande</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
 
       <div class="panel-form" id="form-new-devis" style="display:none;">
         <h2>Nouveau devis</h2>
+        <p class="required-note">Référence attribuée automatiquement (ex. DEV-2026-001).</p>
         <div class="field">
           <label class="field-required" for="devis-offre">Offre liée</label>
           <select id="devis-offre"></select>
+          <p class="required-note">Les montants de l'offre sont proposés automatiquement — modifiables ci-dessous.</p>
         </div>
-        <div class="field">
-          <label class="field-required" for="devis-reference">Référence du devis</label>
-          <input type="text" id="devis-reference" placeholder="ex. OFF-2026-015-B">
+        <div class="field"><label for="devis-htva">Montant HTVA (€)</label><input type="number" id="devis-htva" step="0.01"></div>
+        <div class="field"><label for="devis-tva">Taux de TVA</label>
+          <select id="devis-tva"><option value="21">21 %</option><option value="12">12 %</option><option value="6">6 %</option><option value="0">0 %</option></select>
         </div>
-        <div class="field">
-          <label for="devis-montant">Montant TTC (€)</label>
-          <input type="number" id="devis-montant" step="0.01">
-        </div>
+        <div class="field"><label>Montant TVA</label><input type="text" id="devis-montant-tva" readonly style="background:var(--fog);"></div>
+        <div class="field"><label>Prix TTC</label><input type="text" id="devis-ttc" readonly style="background:var(--fog); font-weight:600;"></div>
         <div class="field">
           <label for="devis-doc-note">Documentation technique (note libre)</label>
           <textarea id="devis-doc-note" placeholder="Note technique libre"></textarea>
@@ -336,6 +416,22 @@
         <button class="btn btn-primary" id="btn-save-devis">Enregistrer le devis</button>
         <button class="btn btn-secondary" id="btn-cancel-devis">Annuler</button>
       </div>
+    </section>
+
+    <!-- ===== Vue Commandes (bon de commande + réception) ===== -->
+    <section id="view-commandes" style="display:none;">
+      <div class="page-header">
+        <div>
+          <h1>Commandes</h1>
+          <div class="subtitle">Bon de commande créé depuis un devis accepté, puis réception confirmée avant facturation</div>
+        </div>
+      </div>
+      <table class="data-table" id="commandes-table">
+        <thead>
+          <tr><th>N° BC</th><th>Devis</th><th>Client</th><th>Total TTC</th><th>Statut</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </section>
 
     <!-- ===== Vue Factures ===== -->

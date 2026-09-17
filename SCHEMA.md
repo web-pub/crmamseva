@@ -1,6 +1,6 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-023
+Version : V01-028
 
 ## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
 
@@ -111,6 +111,7 @@ Contact commercial **pas encore qualifié** — étape intermédiaire avant la c
 | source | string | site web, recommandation, salon... |
 | statut | `prospect` \| `client` | |
 | responsablesUids | array | uids des commerciaux responsables — **un prospect/client peut être attribué à plusieurs commerciaux** ; déterminent qui peut voir/modifier ce prospect (voir modèle de droits ci-dessus) |
+| responsablePrincipalUid | string | lequel des `responsablesUids` est désigné "principal" — modifiable à tout moment (case/sélecteur dans la fiche) |
 | equipeIds | array | dénormalisé depuis les fiches des responsables, pour le filtrage par Manager |
 | secteur / tags | array | |
 | historique | array<map> | `{date, auteur, note}` |
@@ -138,20 +139,29 @@ Message envoyé par un client depuis son portail.
 ### `offres/{id}`
 | Champ | Type | Notes |
 |---|---|---|
-| numero | string | **numéro unique de l'offre**, ex. `OFF-2026-014` |
+| numero | string | **généré automatiquement** au format `OFF-{année}/{00001}` — voir `genererNumeroAnnuel()` dans `assets/app.js`, compteur stocké dans `compteurs/offres_{année}` (se remet à 0 tout seul chaque nouvelle année, une nouvelle clé de compteur étant créée) |
 | prospectId | string | référence |
 | titre, description | string | |
 | dateReception, dateLimiteReponse | timestamp | |
 | etapePipeline | string | une des 6 étapes (voir ci-dessous) |
 | historiqueEtapes | array<map> | `{etape, date}` — sert de base au calcul des rappels |
 | responsablesUids | array | uids des commerciaux responsables — **plusieurs commerciaux possibles** sur une même offre |
+| responsablePrincipalUid | string | lequel des `responsablesUids` est désigné "principal" — modifiable à tout moment en rouvrant la fiche |
 | equipeIds | array | dénormalisé depuis les fiches des responsables |
 | statut | `en_cours` \| `gagnee` \| `perdue` \| `abandonnee` | |
 | raisonPerte | string | si perdue |
 | leadOrigineId | string | présent si cette offre est née d'un lead converti |
-| montantEstime | number | montant potentiel (€), saisi à la création — sert au calcul du pipeline total et du revenu pondéré (Reporting) |
+| montantHTVA, tauxTVA, montantTVA, montantTTC | number | saisi en HTVA + taux, TVA et TTC calculés en direct dans le formulaire |
+| montantEstime | number | = `montantHTVA`, conservé pour le calcul du pipeline total et du revenu pondéré (Reporting) |
 | probabilite | number | 0-100, probabilité de réussite — `montantEstime × probabilite` = revenu pondéré de cette offre |
 | documentationTechnique | array<map> | fichiers + texte |
+
+### `compteurs/{cle}`
+Compteurs de numérotation automatique. `cle` = `offres_{année}` ou `devis_{année}` (ex. `offres_2026`), donc le compteur redémarre naturellement à 0 chaque nouvelle année civile sans action manuelle.
+| Champ | Type |
+|---|---|
+| dernier | number |
+| annee | number |
 
 **Étapes du pipeline** : `nouveau` → `qualifie` → `devis_envoye` → `devis_accepte` → `facture` → `client_actif`
 Un rappel se déclenche automatiquement si une offre reste trop longtemps sans changement d'étape (délai configurable par étape, voir `parametres_rappels`).
@@ -160,10 +170,10 @@ Un rappel se déclenche automatiquement si une offre reste trop longtemps sans c
 Plusieurs devis peuvent répondre à la même offre.
 | Champ | Type | Notes |
 |---|---|---|
-| reference | string | **référence du devis**, ex. `OFF-2026-015-A` (rattachée au numéro unique de l'offre) |
-| dateEmission, dateValidite | timestamp | |
-| lignes | array<map> | `{designation, quantite, prixUnitaire, tauxTva}` |
-| totalHT, totalTVA, totalTTC | number | calculés |
+| reference | string | **générée automatiquement** au format `DEV-{année}-{001}` — même mécanisme de compteur annuel que les offres (`compteurs/devis_{année}`) |
+| dateEmission, dateValidite | timestamp | `dateValidite` = date d'émission + délai configurable (`parametres_rappels/devis_validite`, 30 jours par défaut) — sert à détecter les devis expirés dans les Notifications |
+| montantHTVA | number | **proposé automatiquement depuis l'offre liée** à la sélection, modifiable manuellement avant l'enregistrement |
+| tauxTVA, montantTVA, totalTTC | number | calculés en direct dans le formulaire à partir de `montantHTVA` |
 | statut | `brouillon` \| `envoye` \| `accepte` \| `refuse` \| `expire` | |
 | conditions | string | délai, garantie... |
 | documentationTechnique | array<map> | fichiers + texte |
@@ -171,28 +181,44 @@ Plusieurs devis peuvent répondre à la même offre.
 | responsablesUids, equipeIds, prospectId | array/string | **hérités automatiquement de l'offre parente** à la création, pour que les règles de portée (perso/équipe) et l'accès portail client s'appliquent aussi aux devis |
 | acceptationClient | map | `{nom, date}` — rempli quand le client accepte le devis depuis son portail (confirmation simple par saisie du nom, pas une vraie signature électronique) |
 
+### `commandes/{id}`
+Bon de commande, créé depuis un devis accepté — étape intermédiaire entre le devis et la facture, avec confirmation de réception avant facturation (demande d'Hélène).
+| Champ | Type | Notes |
+|---|---|---|
+| numero | string | **généré automatiquement**, format `BC-{année}-{001}` (compteur `compteurs/commandes_{année}`) |
+| offreId, devisId | string | références |
+| prospectId | string | |
+| montantHTVA, tauxTVA, montantTVA, montantTTC | number | copiés depuis le devis au moment de la création |
+| statut | `en_attente` \| `receptionnee` | passe à `receptionnee` via le bouton "Confirmer réception" |
+| reception | map | `{date, confirmePar}` — rempli à la confirmation |
+| dateCommande | timestamp | |
+| responsablesUids, equipeIds | array | hérités du devis/de l'offre |
+
+Cycle complet : devis **accepté** → bouton "Créer bon de commande" (Devis) → réception confirmée (Commandes) → bouton "Générer facture" (Commandes, réservé à superadmin/admin/direction) → facture créée.
+
 ### `factures/{id}`
 | Champ | Type | Notes |
 |---|---|---|
-| numero | string | séquence configurable, unique |
+| numero | string | **généré automatiquement**, format `FAC-{année}-{001}` (compteur `compteurs/factures_{année}`) |
 | devisRef | map | `{offreId, devisId}` — devis accepté d'origine |
+| commandeId | string | bon de commande d'origine (voir `commandes/{id}`) |
 | prospectId | string | |
 | dateFacturation, dateEcheance | timestamp | |
-| lignes, totalHT, totalTVA, totalTTC | — | repris du devis, modifiables |
+| montantHTVA, tauxTVA, montantTVA, totalTTC | number | repris de la commande (donc du devis) |
 | statutPaiement | `a_payer` \| `payee` \| `en_retard` | |
 | exportBob | map | `{exportee: bool, dateExport, formatCsv}` |
-| responsablesUids, equipeIds | array | hérités du devis/de l'offre d'origine — **génération** réservée à superadmin/admin/direction (bouton "Générer facture" sur un devis accepté) ; **lecture** ouverte au(x) commercial(aux)/manager concerné(s) |
+| responsablesUids, equipeIds | array | hérités de la commande/du devis/de l'offre d'origine — **génération** réservée à superadmin/admin/direction (bouton "Générer facture" sur une commande réceptionnée) ; **lecture** ouverte au(x) commercial(aux)/manager concerné(s) |
 
 ### `pointages/{id}`
-Heures travaillées, saisies par un travailleur sur un projet.
+Heures travaillées, ouvert à **tous les rôles internes** (pas seulement Travailleur) — Commercial, Manager, Direction, Admin, Super Admin et Travailleur peuvent tous encoder leur temps depuis "Mon pointage".
 | Champ | Type | Notes |
 |---|---|---|
-| uid | string | référence utilisateur (travailleur) |
-| projetId | string | référence offre, ou `"INTERNE"` pour les tâches non liées à un client |
+| uid | string | référence utilisateur (celui qui a pointé) |
+| commandeId | string | référence `commandes/{id}` — **une commande = un projet** (demande d'Hélène) — ou `"INTERNE"` pour les tâches non liées à une commande précise |
 | date | timestamp | |
 | heures | number | |
 | description | string | optionnel |
-| statut | `en_attente` \| `valide` | validé par un Admin |
+| statut | `en_attente` \| `valide` | Admin/Super Admin voient et valident les feuilles de temps de tout le monde (vue "Toutes les feuilles de temps" dans Mon pointage) |
 
 ### `stock_articles/{id}`
 | Champ | Type |
@@ -226,7 +252,22 @@ Heures travaillées, saisies par un travailleur sur un projet.
 | statut | `a_envoyer` \| `envoye` \| `traite` |
 
 ### `parametres_rappels/{etape}`
-Délai (en jours) avant relance automatique, configurable par étape du pipeline — Super Admin uniquement.
+Délai (en jours) avant relance automatique. Clés = les 5 étapes du pipeline (hors "Client actif"), plus deux clés spéciales : `prospect_inactif` (jours sans offre avant de suggérer une relance) et `devis_validite` (durée de validité par défaut d'un devis, utilisée pour dater son expiration à la création). Modifiable dans Administration > Rappels (Admin/Super Admin) ; **lu par tous les rôles internes** (pas seulement Admin) pour que les notifications de Commercial/Manager fonctionnent aussi.
+
+## Notifications
+
+Pas de collection dédiée : calculées **côté client** (`renderNotifications()` dans `assets/app.js`), à partir des données déjà chargées (donc déjà filtrées par la portée de l'utilisateur). Catégories couvertes :
+- Offres en retard à une étape du pipeline (réutilise les délais `parametres_rappels`)
+- Devis envoyés dont la `dateValidite` est dépassée
+- Activités en retard (échéance passée, non faites)
+- Prospects sans offre depuis plus de `prospect_inactif` jours (à relancer)
+- Commandes en attente de réception depuis plus de 14 jours (seuil fixe pour l'instant)
+
+Un badge sur l'item de menu "🔔 Notifications" affiche le nombre total ; cliquer une notification ouvre directement la vue concernée.
+
+## Calendrier
+
+Pas de collection dédiée non plus : vue mensuelle calculée côté client (`renderCalendrier()` dans `assets/app.js`) à partir des données déjà chargées. Affiche, par jour : les Activités (`dateEcheance`), les devis envoyés qui expirent (`dateValidite`), et les dates de commande. Navigation mois précédent/suivant ; clic sur un jour pour le détail.
 
 ### `contenu_site/{cle}`
 Textes éditables des pages publiques (accueil, mentions légales, etc.) — pour que tout le contenu reste modifiable depuis les interfaces Admin/Super Admin.

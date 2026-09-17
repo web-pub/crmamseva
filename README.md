@@ -1,8 +1,54 @@
-# CRMAmseva — V01-023
+# CRMAmseva — V01-028
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
 
-## 🌐 Portail client (nouveau)
+## 📅 Calendrier (nouveau)
+
+- Nouvel item de menu **"Calendrier"** : vue mensuelle avec navigation ← / →
+- Affiche par jour, avec un petit point de couleur : les **Activités** (appel/email/réunion/tâche), les **devis qui expirent**, et les **dates de commande**
+- Clic sur un jour → détail complet en dessous de la grille
+- Aucune nouvelle collection : tout est recalculé à partir des données déjà en mémoire (comme Reporting et Notifications), donc toujours filtré par ta portée d'accès
+
+## ⏱️ Feuille de temps ouverte à tout le monde (nouveau)
+
+- **"Mon pointage"** apparaît maintenant dans le menu principal, accessible à **tous les rôles internes** (Commercial, Manager, Direction, Admin, Super Admin) — plus seulement aux Travailleurs
+- **Une commande = un projet** (demande d'Hélène) : le sélecteur de projet liste désormais les vraies commandes (bons de commande), plus une entrée "Tâches internes" — aussi bien dans l'espace Travailleur que dans le tableau de bord principal
+- **Admin/Super Admin** voient en plus une section **"Toutes les feuilles de temps"** avec un bouton "Valider" par ligne, tous rôles confondus
+- Un Travailleur peut désormais lire la liste des commandes (juste pour choisir sur laquelle pointer) sans accéder au reste des données commerciales
+
+## 🔔 Système de notifications (nouveau)
+
+- Nouvel item de menu **"🔔 Notifications"** avec un badge indiquant le nombre d'alertes en cours, tout en haut du menu
+- Une seule vue centralisée, alimentée automatiquement par :
+  - **Offres en retard** à une étape du pipeline (réutilise les délais déjà configurés dans Rappels)
+  - **Devis expirés** (validité par défaut : 30 jours après émission, réglable dans Rappels)
+  - **Activités en retard** (échéance dépassée, non faites)
+  - **Prospects à relancer** (aucune offre créée depuis plus de X jours, réglable dans Rappels — 7 jours par défaut)
+  - **Réceptions en attente** depuis plus de 14 jours après la commande
+- Cliquer une notification ouvre directement la vue concernée (Pipeline, Devis, Activités, Prospects ou Commandes)
+- **Correction associée** : les délais de relance (Administration > Rappels) étaient jusqu'ici lisibles par Admin/Super Admin/Direction uniquement — un Commercial ou Manager ne voyait donc jamais aucune alerte de retard. C'est corrigé : tout le monde (sauf Travailleur et le portail client) peut désormais lire ces seuils, seule leur modification reste réservée à la gestion.
+- Rien n'est stocké : tout est recalculé à l'affichage à partir des données déjà chargées (donc déjà filtrées par la portée de chacun)
+
+## 📦 Bon de commande + réception (nouveau maillon entre devis et facture)
+
+Le cycle complet est maintenant : **Devis accepté → Bon de commande → Réception confirmée → Facture**.
+
+- **Nouvelle vue "Commandes"** entre Devis et Factures dans le menu
+- Dans l'onglet **Devis**, un devis accepté propose un bouton **"Créer bon de commande"** (numéro auto `BC-2026-001`, reprend les montants du devis)
+- Dans **Commandes**, tant que la commande n'est pas réceptionnée : bouton **"Confirmer réception"**
+- Une fois réceptionnée : bouton **"Générer facture"** apparaît (réservé à Admin/Super Admin/Direction, comme avant) — **il n'est plus possible de générer une facture directement depuis un devis**, il faut passer par la commande + réception
+- Au passage, la numérotation des factures utilise maintenant le même compteur annuel fiable que les offres/devis/commandes (`FAC-2026-001`) — l'ancien système comptait juste le nombre de factures déjà chargées, ce qui pouvait créer des doublons
+
+## 🐛 Correction + nouveautés demandées (V01-024)
+
+- **Bug corrigé** : le formulaire "Nouveau devis" ne rafraîchissait pas la liste des offres à l'ouverture, ce qui pouvait laisser le sélecteur vide selon l'ordre de chargement. Le formulaire recharge maintenant systématiquement la liste au clic sur "+ Nouveau devis", et un message clair apparaît s'il n'y a encore aucune offre. En prime, les erreurs Firestore réelles (ex. "Missing or insufficient permissions") s'affichent désormais dans l'alerte au lieu d'un message générique — utile pour diagnostiquer un futur souci de règles non déployées.
+- **Numérotation automatique** : les offres suivent le format `OFF-2026/00001` et les devis `DEV-2026-001`, générés via un compteur Firestore (`compteurs/offres_{année}` et `compteurs/devis_{année}`) qui redémarre naturellement à 0 chaque nouvelle année — plus besoin de gérer ça à la main
+- **TVA** : sur une offre, tu saisis le montant HTVA et le taux (21/12/6/0 %) — la TVA et le TTC se calculent en direct. Sur un devis, ces montants sont **proposés automatiquement** depuis l'offre liée, mais le HTVA reste modifiable manuellement avant l'enregistrement
+- **Prospect → Client** : bouton "Transformer en client" directement dans le tableau Prospects
+- **Responsable principal** : en plus des responsables multiples déjà en place, tu peux désigner lequel est le "principal" (prospect et offre) — modifiable à tout moment en rouvrant la fiche
+- **Modifier une fiche existante** : bouton "Modifier" sur les prospects (tableau) et les offres (carte du pipeline) — ouvre le même formulaire pré-rempli, enregistre en mise à jour. *(Pas encore fait pour les devis/leads — prochaine itération si besoin.)*
+
+## 🌐 Portail client
 
 Décisions confirmées par Hélène : **pas de multi-sociétés**, **portail client construit**, **Lead Mining écarté** (nécessite un abonnement séparé à une base de données d'entreprises tierce — pas pertinent pour une clientèle locale).
 
@@ -143,12 +189,21 @@ Ce n'est plus une démo : `index.html`, `dashboard.html` et `espace-travailleur.
 ## Ce qui reste à faire (prochaines étapes)
 
 1. ~~Cloud Function pour la création sécurisée de comptes~~ — fait via l'app Firebase secondaire (voir plus haut)
-2. Formulaires de création pour Prospects, Offres et Articles de stock (actuellement seuls Devis, Pointages et prise de Stock écrivent réellement — les boutons "+ Nouveau/Nouvel..." restants n'ont pas encore d'action câblée)
-3. Envoi des fichiers de documentation technique vers Firebase Storage (le champ existe, l'upload réel reste à faire)
-4. Générer les PDF de devis/factures
-5. Cloud Function planifiée pour le moteur de rappels (déclenchement réel des relances email, au lieu de la lecture simple actuelle)
-6. Confirmer la structure exacte des colonnes CSV pour BOB
-7. Créer les pages légales (`/legal/*.html`) liées depuis le footer
+2. ~~Formulaires de création pour Prospects et Offres~~ — fait (avec modification également)
+3. Formulaire de création pour les Articles de stock (le bouton "+ Nouvel article" n'a pas encore d'action câblée)
+4. Modification des Devis et des Leads (actuellement seuls Prospects et Offres ont un bouton "Modifier")
+5. Envoi des fichiers de documentation technique vers Firebase Storage (le champ existe, l'upload réel reste à faire — Storage désactivé pour l'instant)
+6. Générer les PDF de devis/factures (pour l'instant, impression navigateur uniquement sur le portail client)
+7. Cloud Function planifiée pour le moteur de rappels (déclenchement réel des relances email, au lieu de la lecture simple actuelle)
+8. Confirmer la structure exacte des colonnes CSV pour BOB
+9. Créer les pages légales (`/legal/*.html`) liées depuis le footer
+
+## En attente de priorisation (demandes du 17/09)
+- ~~Bon de commande + réception~~ — fait
+- ~~Système de notifications/alertes~~ — fait
+- ~~Feuille de temps généralisée~~ — fait
+- ~~Calendrier~~ — fait (voir plus haut)
+- Chat entre collègues
 
 ## Rappel des règles standards appliquées
 

@@ -1,6 +1,6 @@
 // ============================================================
 // Projet : CRMAmseva
-// Version : V01-023
+// Version : V01-028
 // Règles Firestore — authentification via Firebase Auth obligatoire.
 //
 // Rôles : superadmin, admin, direction, manager, commercial, travailleur
@@ -112,9 +112,15 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // ---------- Compteurs (numérotation automatique offres/devis, par année) ----------
+    match /compteurs/{compteurId} {
+      allow read, write: if isSignedIn() && !isTravailleur() && !estUtilisateurPortail();
+    }
+
     // ---------- Délais de relance par étape du pipeline ----------
     match /parametres_rappels/{etape} {
-      allow read, write: if peutTout();
+      allow read: if isSignedIn() && !isTravailleur() && !estUtilisateurPortail();
+      allow write: if peutTout();
     }
 
     // ---------- Activités (appels, emails, relances liés à un lead/offre) ----------
@@ -179,6 +185,15 @@ service cloud.firestore {
       allow delete: if accesCommercial(resource.data);
     }
 
+    // ---------- Commandes (bon de commande + réception, entre devis et facture) ----------
+    match /commandes/{commandeId} {
+      // Un travailleur peut consulter la liste des commandes (pour pointer dessus),
+      // sans pour autant avoir accès aux autres données commerciales
+      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId) || isTravailleur();
+      allow create: if accesCommercialCreation(request.resource.data);
+      allow update, delete: if accesCommercial(resource.data);
+    }
+
     // ---------- Factures ----------
     // Lecture ouverte au(x) commercial(aux)/manager concerné(s) ET au client portail
     // propriétaire ; création/modification (paiement, export BOB) réservée à peutTout().
@@ -189,10 +204,11 @@ service cloud.firestore {
 
     // ---------- Pointages (heures travaillées par projet) ----------
     match /pointages/{pointageId} {
-      // Un travailleur ne peut créer/lire que ses propres pointages,
-      // et seulement s'il a le module "pointage" activé sur sa fiche
+      // Ouvert à tous les rôles internes (Commercial/Manager/Direction/Admin/Travailleur) :
+      // chacun peut créer/lire SES PROPRES pointages ; pour un Travailleur, en plus,
+      // le module "pointage" doit être activé sur sa fiche
       allow create: if isAdminOrAbove() ||
-        (isSignedIn() && request.resource.data.uid == request.auth.uid && aModule("pointage"));
+        (isSignedIn() && !estUtilisateurPortail() && request.resource.data.uid == request.auth.uid && (!isTravailleur() || aModule("pointage")));
       allow read: if isAdminOrAbove() || (isSignedIn() && resource.data.uid == request.auth.uid);
       allow update, delete: if isAdminOrAbove();
     }
