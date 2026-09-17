@@ -6,6 +6,7 @@
 // ============================================================
 
 let currentUser = null;
+let MON_NOM = "";
 let STOCK_DATA = [];
 // Liste des projets/offres sur lesquels un travailleur peut pointer
 // (nom simplifié, sans les infos commerciales du CRM)
@@ -23,12 +24,15 @@ auth.onAuthStateChanged(async (user) => {
   try {
     const doc = await db.collection("utilisateurs").doc(user.uid).get();
     const modules = doc.exists ? (doc.data().modulesAutorises || []) : [];
+    MON_NOM = doc.exists ? (doc.data().nom || "") : "";
     appliquerModulesAutorises(modules);
+    enregistrerDansAnnuaire(user.uid, MON_NOM, "travailleur");
   } catch (err) {
     console.error(err);
   }
 
   demarrerEcouteurs();
+  demarrerEcouteChat();
 });
 
 function appliquerModulesAutorises(modules) {
@@ -37,6 +41,7 @@ function appliquerModulesAutorises(modules) {
 
   navItems.forEach((item) => {
     const module = item.dataset.module;
+    if (!module) return; // ex. Chat : toujours visible, non soumis aux modules
     const autorise = modules.includes(module);
     item.style.display = autorise ? "" : "none";
     if (autorise && !premierAutorise) premierAutorise = item;
@@ -202,6 +207,119 @@ document.getElementById("btn-save-pointage")?.addEventListener("click", async ()
     console.error(err);
     alert("Impossible d'enregistrer ce pointage.");
   }
+});
+
+// ============================================================
+// Chat — canal général + messages privés (identique au tableau de bord)
+// ============================================================
+let ANNUAIRE_DATA = [];
+let conversationPriveeActuelle = null;
+let arretEcouteChatPrive = null;
+const LABELS_ROLE_CHAT = { superadmin: "Super Admin", admin: "Admin", direction: "Direction", manager: "Manager", commercial: "Commercial", travailleur: "Travailleur" };
+
+function conversationId(uidA, uidB) {
+  return [uidA, uidB].sort().join("_");
+}
+
+function enregistrerDansAnnuaire(uid, nom, role) {
+  db.collection("annuaire").doc(uid).set({ nom, role }, { merge: true }).catch((err) => console.error("annuaire:", err));
+}
+
+function demarrerEcouteChat() {
+  db.collection("annuaire").onSnapshot((snap) => {
+    ANNUAIRE_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.id !== currentUser.uid);
+    remplirSelectContacts();
+  }, (err) => console.error("annuaire:", err));
+
+  db.collection("chat_general").orderBy("date", "asc").limitToLast(100).onSnapshot((snap) => {
+    renderChatGeneral(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  }, (err) => console.error("chat_general:", err));
+}
+
+function renderChatGeneral(messages) {
+  const wrap = document.getElementById("chat-general-messages");
+  if (!wrap) return;
+  wrap.innerHTML = messages.length ? messages.map((m) => `
+    <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
+      ${m.uid !== currentUser.uid ? `<div class="chat-auteur">${m.nom || "?"}</div>` : ""}
+      ${m.texte}
+      <div class="chat-heure">${m.date ? dateToJsDate(m.date).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</div>
+    </div>
+  `).join("") : `<div class="chat-empty">Aucun message pour l'instant — lance la conversation !</div>`;
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+document.getElementById("btn-send-general")?.addEventListener("click", async () => {
+  const input = document.getElementById("chat-general-input");
+  const texte = input.value.trim();
+  if (!texte) return;
+  try {
+    await db.collection("chat_general").add({ uid: currentUser.uid, nom: MON_NOM || "Moi", texte, date: firebase.firestore.Timestamp.now() });
+    input.value = "";
+  } catch (err) {
+    console.error(err);
+    alert("Message non envoyé : " + (err.message || err.code || ""));
+  }
+});
+document.getElementById("chat-general-input")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("btn-send-general").click();
+});
+
+function remplirSelectContacts() {
+  const select = document.getElementById("chat-contact-select");
+  if (!select) return;
+  select.innerHTML = ANNUAIRE_DATA.map((u) => `<option value="${u.id}">${u.nom} (${LABELS_ROLE_CHAT[u.role] || u.role})</option>`).join("") || `<option value="">Aucun collègue trouvé</option>`;
+  if (ANNUAIRE_DATA.length && !conversationPriveeActuelle) ouvrirConversationPrivee(ANNUAIRE_DATA[0].id);
+}
+document.getElementById("chat-contact-select")?.addEventListener("change", (e) => ouvrirConversationPrivee(e.target.value));
+
+function ouvrirConversationPrivee(uidContact) {
+  if (!uidContact) return;
+  conversationPriveeActuelle = uidContact;
+  document.getElementById("chat-contact-select").value = uidContact;
+  if (arretEcouteChatPrive) arretEcouteChatPrive();
+  const cid = conversationId(currentUser.uid, uidContact);
+  arretEcouteChatPrive = db.collection("chat_prive").doc(cid).collection("messages").orderBy("date", "asc").limitToLast(100)
+    .onSnapshot((snap) => renderChatPrive(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (err) => console.error("chat_prive:", err));
+}
+
+function renderChatPrive(messages) {
+  const wrap = document.getElementById("chat-prive-messages");
+  if (!wrap) return;
+  wrap.innerHTML = messages.length ? messages.map((m) => `
+    <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
+      ${m.texte}
+      <div class="chat-heure">${m.date ? dateToJsDate(m.date).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</div>
+    </div>
+  `).join("") : `<div class="chat-empty">Aucun message avec cette personne pour l'instant.</div>`;
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+document.getElementById("btn-send-prive")?.addEventListener("click", async () => {
+  const input = document.getElementById("chat-prive-input");
+  const texte = input.value.trim();
+  if (!texte || !conversationPriveeActuelle) return;
+  const cid = conversationId(currentUser.uid, conversationPriveeActuelle);
+  try {
+    await db.collection("chat_prive").doc(cid).collection("messages").add({ uid: currentUser.uid, texte, date: firebase.firestore.Timestamp.now() });
+    input.value = "";
+  } catch (err) {
+    console.error(err);
+    alert("Message non envoyé : " + (err.message || err.code || ""));
+  }
+});
+document.getElementById("chat-prive-input")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("btn-send-prive").click();
+});
+
+// ---------- Onglets du Chat (Général / Messages privés) ----------
+document.querySelectorAll(".chat-tab-item").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".chat-tab-item").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll(".chat-tab-panel").forEach((p) => (p.style.display = "none"));
+    document.getElementById("chattab-" + tab.dataset.chattab).style.display = "block";
+  });
 });
 
 // ---------- Navigation (2 entrées) ----------

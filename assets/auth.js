@@ -63,6 +63,7 @@ if (loginForm) {
 
     try {
       const cred = await auth.signInWithEmailAndPassword(email, password);
+      db.collection("utilisateurs").doc(cred.user.uid).update({ derniereConnexion: firebase.firestore.Timestamp.now() }).catch(() => {});
       await redirigerSelonRole(cred.user.uid);
     } catch (err) {
       console.error(err);

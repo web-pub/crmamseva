@@ -30,6 +30,7 @@ const LABELS_ROLE = {
 let currentUser = null;
 let currentRole = null;
 let currentEquipeId = null;
+let MON_NOM = "";
 
 // "tout" = admin/superadmin/direction voient tout ; "equipe" = manager (son équipe) ;
 // "perso" = commercial (ses propres dossiers uniquement)
@@ -67,6 +68,7 @@ auth.onAuthStateChanged(async (user) => {
     }
     currentRole = doc.data().role;
     currentEquipeId = doc.data().equipeId || null;
+    MON_NOM = doc.data().nom || "";
 
     if (currentRole === "travailleur") {
       window.location.href = "espace-travailleur.html";
@@ -96,12 +98,29 @@ auth.onAuthStateChanged(async (user) => {
     document.querySelectorAll("#scope-badge-pipeline, #scope-badge-prospects, #scope-badge-leads, #scope-badge-activites, #scope-badge-reporting").forEach((el) => (el.textContent = libelleScope));
 
     demarrerEcouteursFirestore();
+    enregistrerDansAnnuaire(currentUser.uid, MON_NOM, currentRole);
+    demarrerEcouteChat();
   } catch (err) {
     console.error(err);
   }
 });
 
 document.getElementById("btn-logout")?.addEventListener("click", () => auth.signOut());
+
+// Affiche un bandeau d'erreur visible en haut du contenu (au lieu de laisser
+// une erreur Firestore invisible en console) — utile notamment si un index
+// manque encore pour une requête filtrée (collectionGroup, etc.)
+function afficherErreurGlobale(msg) {
+  let bandeau = document.getElementById("erreur-globale");
+  if (!bandeau) {
+    bandeau = document.createElement("div");
+    bandeau.id = "erreur-globale";
+    bandeau.style.cssText = "position:sticky;top:0;z-index:50;background:var(--clay-soft);color:var(--clay);padding:10px 16px;border-radius:var(--radius);margin-bottom:16px;font-size:13px;";
+    document.querySelector(".main-content")?.prepend(bandeau);
+  }
+  bandeau.textContent = msg;
+  bandeau.style.display = "block";
+}
 
 // Applique le filtre de portée (tout / équipe / perso) à une requête Firestore
 function avecPortee(query) {
@@ -134,19 +153,19 @@ function demarrerEcouteursFirestore() {
     PROSPECTS_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderProspects();
     renderPipeline();
-  }, (err) => console.error("prospects:", err));
+  }, (err) => { console.error("prospects:", err); afficherErreurGlobale("Erreur de chargement des prospects : " + err.message); });
 
   avecPortee(db.collection("offres")).onSnapshot((snap) => {
     OFFRES_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     remplirSelectOffres();
     renderPipeline();
-  }, (err) => console.error("offres:", err));
+  }, (err) => { console.error("offres:", err); afficherErreurGlobale("Erreur de chargement des offres : " + err.message); });
 
   avecPortee(db.collectionGroup("devis")).onSnapshot((snap) => {
     DEVIS_DATA = snap.docs.map((d) => ({ id: d.id, offreId: d.ref.parent.parent.id, ...d.data() }));
     renderDevis();
     renderPipeline();
-  }, (err) => console.error("devis:", err));
+  }, (err) => { console.error("devis:", err); afficherErreurGlobale("Erreur de chargement des devis : " + err.message + " — si le message parle d'index, vérifie qu'ils sont bien créés et \"Activé\" (pas \"En cours de création\") dans Firestore > Index."); });
 
   avecPortee(db.collection("commandes")).onSnapshot((snap) => {
     COMMANDES_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -420,6 +439,109 @@ function classeDot(type) {
   const map = { appel: "cal-dot-appel", email: "cal-dot-email", reunion: "cal-dot-reunion", tache: "cal-dot-tache", personnalisee: "cal-dot-tache", devis: "cal-dot-devis", commande: "cal-dot-commande" };
   return map[type] || "cal-dot-tache";
 }
+
+// ============================================================
+// Chat — canal général + messages privés (1-à-1)
+// ============================================================
+let ANNUAIRE_DATA = [];
+let conversationPriveeActuelle = null; // uid du contact sélectionné
+let arretEcouteChatPrive = null; // fonction pour désabonner l'écouteur précédent
+
+function conversationId(uidA, uidB) {
+  return [uidA, uidB].sort().join("_");
+}
+
+function enregistrerDansAnnuaire(uid, nom, role) {
+  db.collection("annuaire").doc(uid).set({ nom, role }, { merge: true }).catch((err) => console.error("annuaire:", err));
+}
+
+function demarrerEcouteChat() {
+  db.collection("annuaire").onSnapshot((snap) => {
+    ANNUAIRE_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.id !== currentUser.uid);
+    remplirSelectContacts();
+  }, (err) => console.error("annuaire:", err));
+
+  db.collection("chat_general").orderBy("date", "asc").limitToLast(100).onSnapshot((snap) => {
+    renderChatGeneral(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  }, (err) => { console.error("chat_general:", err); afficherErreurGlobale("Erreur de chargement du chat : " + err.message); });
+}
+
+function renderChatGeneral(messages) {
+  const wrap = document.getElementById("chat-general-messages");
+  if (!wrap) return;
+  wrap.innerHTML = messages.length ? messages.map((m) => `
+    <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
+      ${m.uid !== currentUser.uid ? `<div class="chat-auteur">${m.nom || "?"}</div>` : ""}
+      ${m.texte}
+      <div class="chat-heure">${m.date ? dateToJsDate(m.date).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</div>
+    </div>
+  `).join("") : `<div class="chat-empty">Aucun message pour l'instant — lance la conversation !</div>`;
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+document.getElementById("btn-send-general")?.addEventListener("click", async () => {
+  const input = document.getElementById("chat-general-input");
+  const texte = input.value.trim();
+  if (!texte) return;
+  try {
+    await db.collection("chat_general").add({ uid: currentUser.uid, nom: MON_NOM || "Moi", texte, date: firebase.firestore.Timestamp.now() });
+    input.value = "";
+  } catch (err) {
+    console.error(err);
+    alert("Message non envoyé : " + (err.message || err.code || ""));
+  }
+});
+document.getElementById("chat-general-input")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("btn-send-general").click();
+});
+
+function remplirSelectContacts() {
+  const select = document.getElementById("chat-contact-select");
+  if (!select) return;
+  select.innerHTML = ANNUAIRE_DATA.map((u) => `<option value="${u.id}">${u.nom} (${LABELS_ROLE[u.role] || u.role})</option>`).join("") || `<option value="">Aucun collègue trouvé</option>`;
+  if (ANNUAIRE_DATA.length && !conversationPriveeActuelle) ouvrirConversationPrivee(ANNUAIRE_DATA[0].id);
+}
+document.getElementById("chat-contact-select")?.addEventListener("change", (e) => ouvrirConversationPrivee(e.target.value));
+
+function ouvrirConversationPrivee(uidContact) {
+  if (!uidContact) return;
+  conversationPriveeActuelle = uidContact;
+  document.getElementById("chat-contact-select").value = uidContact;
+  if (arretEcouteChatPrive) arretEcouteChatPrive();
+  const cid = conversationId(currentUser.uid, uidContact);
+  arretEcouteChatPrive = db.collection("chat_prive").doc(cid).collection("messages").orderBy("date", "asc").limitToLast(100)
+    .onSnapshot((snap) => renderChatPrive(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      (err) => { console.error("chat_prive:", err); afficherErreurGlobale("Erreur de chargement du message privé : " + err.message); });
+}
+
+function renderChatPrive(messages) {
+  const wrap = document.getElementById("chat-prive-messages");
+  if (!wrap) return;
+  wrap.innerHTML = messages.length ? messages.map((m) => `
+    <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
+      ${m.texte}
+      <div class="chat-heure">${m.date ? dateToJsDate(m.date).toLocaleString("fr-BE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</div>
+    </div>
+  `).join("") : `<div class="chat-empty">Aucun message avec cette personne pour l'instant.</div>`;
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+document.getElementById("btn-send-prive")?.addEventListener("click", async () => {
+  const input = document.getElementById("chat-prive-input");
+  const texte = input.value.trim();
+  if (!texte || !conversationPriveeActuelle) return;
+  const cid = conversationId(currentUser.uid, conversationPriveeActuelle);
+  try {
+    await db.collection("chat_prive").doc(cid).collection("messages").add({ uid: currentUser.uid, texte, date: firebase.firestore.Timestamp.now() });
+    input.value = "";
+  } catch (err) {
+    console.error(err);
+    alert("Message non envoyé : " + (err.message || err.code || ""));
+  }
+});
+document.getElementById("chat-prive-input")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("btn-send-prive").click();
+});
 
 function renderCalendrier() {
   const grid = document.getElementById("cal-grid");
@@ -1397,6 +1519,100 @@ async function creerCommande(offreId, devisId) {
   }
 }
 
+// ---------- Création MANUELLE d'une commande (sans devis préalable) ----------
+function remplirSelectProspectsPourFormulaire(selectId) {
+  const select = document.getElementById(selectId);
+  if (select) select.innerHTML = PROSPECTS_DATA.map((p) => `<option value="${p.id}">${p.raisonSociale || p.nom}</option>`).join("");
+}
+document.getElementById("btn-new-commande")?.addEventListener("click", () => {
+  remplirSelectProspectsPourFormulaire("commande-prospect");
+  document.getElementById("commande-htva").value = "";
+  document.getElementById("commande-tva").value = "21";
+  recalculerCommandeTVA();
+  document.getElementById("form-new-commande").style.display = "block";
+});
+document.getElementById("btn-cancel-commande")?.addEventListener("click", () => {
+  document.getElementById("form-new-commande").style.display = "none";
+});
+const recalculerCommandeTVA = brancherCalculTVA("commande-htva", "commande-tva", "commande-montant-tva", "commande-ttc");
+document.getElementById("btn-save-commande")?.addEventListener("click", async () => {
+  const prospectId = document.getElementById("commande-prospect").value;
+  if (!prospectId) { alert("Le prospect/client est obligatoire."); return; }
+  const montantHTVA = parseFloat(document.getElementById("commande-htva").value) || 0;
+  const tauxTVA = parseFloat(document.getElementById("commande-tva").value) || 0;
+  const montantTVA = montantHTVA * (tauxTVA / 100);
+  const prospect = PROSPECTS_DATA.find((p) => p.id === prospectId);
+
+  try {
+    const { annee, numero } = await genererNumeroAnnuel("commandes", 3);
+    await db.collection("commandes").add({
+      numero: `BC-${annee}-${numero}`,
+      offreId: null,
+      devisId: null,
+      prospectId,
+      montantHTVA,
+      tauxTVA,
+      montantTVA,
+      montantTTC: montantHTVA + montantTVA,
+      statut: "en_attente",
+      dateCommande: firebase.firestore.Timestamp.now(),
+      responsablesUids: prospect?.responsablesUids || [currentUser.uid],
+      equipeIds: prospect?.equipeIds || [],
+    });
+    document.getElementById("form-new-commande").style.display = "none";
+  } catch (err) {
+    console.error(err);
+    alert("Impossible de créer cette commande : " + (err.message || err.code || ""));
+  }
+});
+
+// ---------- Création MANUELLE d'une facture (sans commande préalable) ----------
+document.getElementById("btn-new-facture")?.addEventListener("click", () => {
+  remplirSelectProspectsPourFormulaire("facture-prospect");
+  document.getElementById("facture-htva").value = "";
+  document.getElementById("facture-tva").value = "21";
+  document.getElementById("facture-echeance").value = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  recalculerFactureTVA();
+  document.getElementById("form-new-facture").style.display = "block";
+});
+document.getElementById("btn-cancel-facture")?.addEventListener("click", () => {
+  document.getElementById("form-new-facture").style.display = "none";
+});
+const recalculerFactureTVA = brancherCalculTVA("facture-htva", "facture-tva", "facture-montant-tva", "facture-ttc");
+document.getElementById("btn-save-facture")?.addEventListener("click", async () => {
+  const prospectId = document.getElementById("facture-prospect").value;
+  if (!prospectId) { alert("Le prospect/client est obligatoire."); return; }
+  const montantHTVA = parseFloat(document.getElementById("facture-htva").value) || 0;
+  const tauxTVA = parseFloat(document.getElementById("facture-tva").value) || 0;
+  const montantTVA = montantHTVA * (tauxTVA / 100);
+  const echeanceStr = document.getElementById("facture-echeance").value;
+  const prospect = PROSPECTS_DATA.find((p) => p.id === prospectId);
+
+  try {
+    const { annee, numero } = await genererNumeroAnnuel("factures", 3);
+    await db.collection("factures").add({
+      numero: `FAC-${annee}-${numero}`,
+      prospectId,
+      devisRef: null,
+      commandeId: null,
+      dateFacturation: firebase.firestore.Timestamp.now(),
+      dateEcheance: echeanceStr ? firebase.firestore.Timestamp.fromDate(new Date(echeanceStr)) : firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 86400000)),
+      montantHTVA,
+      tauxTVA,
+      montantTVA,
+      totalTTC: montantHTVA + montantTVA,
+      statutPaiement: "a_payer",
+      exportBob: { exportee: false },
+      responsablesUids: prospect?.responsablesUids || [currentUser.uid],
+      equipeIds: prospect?.equipeIds || [],
+    });
+    document.getElementById("form-new-facture").style.display = "none";
+  } catch (err) {
+    console.error(err);
+    alert("Impossible de créer cette facture : " + (err.message || err.code || ""));
+  }
+});
+
 function renderCommandes() {
   const tbody = document.querySelector("#commandes-table tbody");
   if (!tbody) return;
@@ -1728,7 +1944,7 @@ function renderUsers() {
   const passTbody = document.querySelector("#passwords-table tbody");
   if (passTbody) {
     passTbody.innerHTML = USERS_DATA.map((u) => `
-      <tr><td>${u.nom || "—"}</td><td>${u.identifiant || "—"}</td><td>${u.motDePasseClair || "—"}</td></tr>
+      <tr><td>${u.nom || "—"}</td><td>${u.identifiant || "—"}</td><td>${u.motDePasseClair || "—"}</td><td>${u.derniereConnexion ? dateToJsDate(u.derniereConnexion).toLocaleDateString("fr-BE") + " - " + dateToJsDate(u.derniereConnexion).toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" }) : "—"}</td></tr>
     `).join("");
   }
 
@@ -1833,12 +2049,22 @@ document.getElementById("btn-save-user")?.addEventListener("click", async () => 
 });
 
 // ---------- Onglets Administration ----------
-document.querySelectorAll(".tab-item").forEach((tab) => {
+document.querySelectorAll(".tab-item[data-tab]").forEach((tab) => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab-item").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".tab-item[data-tab]").forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
     document.querySelectorAll(".tab-panel").forEach((p) => (p.style.display = "none"));
     document.getElementById(tab.dataset.tab).style.display = "block";
+  });
+});
+
+// ---------- Onglets du Chat (Général / Messages privés) ----------
+document.querySelectorAll(".chat-tab-item").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".chat-tab-item").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    document.querySelectorAll(".chat-tab-panel").forEach((p) => (p.style.display = "none"));
+    document.getElementById("chattab-" + tab.dataset.chattab).style.display = "block";
   });
 });
 

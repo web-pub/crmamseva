@@ -450,6 +450,26 @@ table.data-table tbody tr:hover { background: var(--fog); }
   .cal-day { min-height: 50px; font-size: 10px; }
 }
 
+/* ---------- Chat ---------- */
+.chat-messages {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-msg { max-width: 70%; padding: 8px 12px; border-radius: 12px; font-size: 13px; background: var(--fog); align-self: flex-start; }
+.chat-msg.mine { background: var(--navy); color: #fff; align-self: flex-end; }
+.chat-msg .chat-auteur { font-size: 11px; font-weight: 600; margin-bottom: 3px; opacity: 0.75; }
+.chat-msg .chat-heure { font-size: 10px; opacity: 0.6; margin-top: 3px; }
+.chat-input-row { display: flex; gap: 10px; margin-top: 12px; }
+.chat-input-row input { flex: 1; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); font-family: var(--font-ui); font-size: 14px; }
+.chat-empty { color: var(--ink-soft); font-size: 13px; text-align: center; margin: auto; }
+
 @media (max-width: 900px) {
   .app-shell { flex-direction: column; }
   .sidebar { width: 100%; }
