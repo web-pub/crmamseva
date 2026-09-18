@@ -236,8 +236,32 @@ function demarrerEcouteChat() {
   }, (err) => console.error("chat_general:", err));
 }
 
+let dernierMsgGeneral = null;
+let dernierMsgPrive = null;
+let chatEstOuvert = false;
+
+function majBadgeChat() {
+  const lastVu = parseInt(localStorage.getItem("crmamseva_chat_lastvu") || "0", 10);
+  const nonLusGeneral = dernierMsgGeneral && !chatEstOuvert && dernierMsgGeneral.uid !== currentUser.uid && dateToJsDate(dernierMsgGeneral.date).getTime() > lastVu ? 1 : 0;
+  const nonLusPrive = dernierMsgPrive && !chatEstOuvert && dernierMsgPrive.uid !== currentUser.uid && dateToJsDate(dernierMsgPrive.date).getTime() > lastVu ? 1 : 0;
+  const total = nonLusGeneral + nonLusPrive;
+
+  const badge = document.getElementById("floating-chat-count");
+  const navChat = document.querySelector('.nav-item[data-view="chat"]');
+  if (badge) { badge.style.display = total > 0 ? "inline-block" : "none"; badge.textContent = total; }
+  if (navChat) navChat.classList.toggle("a-du-nouveau", total > 0);
+}
+
+function marquerChatCommeLu() {
+  localStorage.setItem("crmamseva_chat_lastvu", Date.now().toString());
+  chatEstOuvert = true;
+  majBadgeChat();
+}
+
 function renderChatGeneral(messages) {
   const wrap = document.getElementById("chat-general-messages");
+  dernierMsgGeneral = messages.length ? messages[messages.length - 1] : null;
+  majBadgeChat();
   if (!wrap) return;
   wrap.innerHTML = messages.length ? messages.map((m) => `
     <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
@@ -268,7 +292,7 @@ document.getElementById("chat-general-input")?.addEventListener("keydown", (e) =
 function remplirSelectContacts() {
   const select = document.getElementById("chat-contact-select");
   if (!select) return;
-  select.innerHTML = ANNUAIRE_DATA.map((u) => `<option value="${u.id}">${u.nom} (${LABELS_ROLE_CHAT[u.role] || u.role})</option>`).join("") || `<option value="">Aucun collègue trouvé</option>`;
+  select.innerHTML = ANNUAIRE_DATA.map((u) => `<option value="${u.id}">${u.nom}</option>`).join("") || `<option value="">Aucun collègue trouvé</option>`;
   if (ANNUAIRE_DATA.length && !conversationPriveeActuelle) ouvrirConversationPrivee(ANNUAIRE_DATA[0].id);
 }
 document.getElementById("chat-contact-select")?.addEventListener("change", (e) => ouvrirConversationPrivee(e.target.value));
@@ -285,6 +309,8 @@ function ouvrirConversationPrivee(uidContact) {
 
 function renderChatPrive(messages) {
   const wrap = document.getElementById("chat-prive-messages");
+  dernierMsgPrive = messages.length ? messages[messages.length - 1] : null;
+  majBadgeChat();
   if (!wrap) return;
   wrap.innerHTML = messages.length ? messages.map((m) => `
     <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
@@ -322,13 +348,18 @@ document.querySelectorAll(".chat-tab-item").forEach((tab) => {
   });
 });
 
-// ---------- Navigation (2 entrées) ----------
+// ---------- Navigation (2 entrées + Chat) ----------
+function afficherVue(target) {
+  document.querySelectorAll(".nav-item[data-view]").forEach((i) => i.classList.remove("active"));
+  document.querySelector(`.nav-item[data-view="${target}"]`)?.classList.add("active");
+  document.querySelectorAll("main > section").forEach((s) => (s.style.display = "none"));
+  document.getElementById("view-" + target).style.display = "block";
+  if (chatEstOuvert && target !== "chat") marquerChatCommeLu();
+  chatEstOuvert = target === "chat";
+  if (chatEstOuvert) marquerChatCommeLu();
+  else majBadgeChat();
+}
 document.querySelectorAll(".nav-item[data-view]").forEach((item) => {
-  item.addEventListener("click", () => {
-    document.querySelectorAll(".nav-item[data-view]").forEach((i) => i.classList.remove("active"));
-    item.classList.add("active");
-    const target = item.dataset.view;
-    document.querySelectorAll("main > section").forEach((s) => (s.style.display = "none"));
-    document.getElementById("view-" + target).style.display = "block";
-  });
+  item.addEventListener("click", () => afficherVue(item.dataset.view));
 });
+document.getElementById("floating-chat-btn")?.addEventListener("click", () => afficherVue("chat"));

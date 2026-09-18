@@ -43,6 +43,17 @@ async function redirigerSelonRole(uid) {
       return;
     }
     const role = doc.data().role;
+    const statut = doc.data().statut || "actif";
+    if (statut === "bloque") {
+      afficherErreurLogin("Ce compte a été bloqué par un administrateur. Contacte AM Seva pour plus d'informations.");
+      await auth.signOut();
+      return;
+    }
+    if (statut === "archive") {
+      afficherErreurLogin("Ce compte a été archivé. Contacte un administrateur si tu penses que c'est une erreur.");
+      await auth.signOut();
+      return;
+    }
     if (role === "travailleur") {
       window.location.href = "espace-travailleur.html";
     } else {

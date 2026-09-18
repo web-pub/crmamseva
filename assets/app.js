@@ -70,6 +70,11 @@ auth.onAuthStateChanged(async (user) => {
     currentEquipeId = doc.data().equipeId || null;
     MON_NOM = doc.data().nom || "";
 
+    const dateMdp = doc.data().dateDernierChangementMdp;
+    if (dateMdp && (Date.now() - dateToJsDate(dateMdp).getTime()) / 86400000 > 90) {
+      setTimeout(() => afficherErreurGlobale("Ton mot de passe date de plus de 3 mois — pense à le changer (demande un lien de réinitialisation à un administrateur si besoin)."), 500);
+    }
+
     if (currentRole === "travailleur") {
       window.location.href = "espace-travailleur.html";
       return;
@@ -93,6 +98,7 @@ auth.onAuthStateChanged(async (user) => {
     document.querySelectorAll('.nav-item[data-restrict="tout"]').forEach((el) => {
       if (currentScope !== "tout") el.remove();
     });
+    if (currentScope !== "tout") document.getElementById("stock-admin-actions")?.remove();
 
     const libelleScope = currentScope === "tout" ? "Vue globale" : currentScope === "equipe" ? `Vue équipe — ${currentEquipeId || "?"}` : "Vue personnelle";
     document.querySelectorAll("#scope-badge-pipeline, #scope-badge-prospects, #scope-badge-leads, #scope-badge-activites, #scope-badge-reporting").forEach((el) => (el.textContent = libelleScope));
@@ -206,6 +212,11 @@ function demarrerEcouteursFirestore() {
       TOUS_POINTAGES_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       renderToutesPointages();
     }, (err) => console.error("tous pointages:", err));
+
+    db.collection("compteurs").onSnapshot((snap) => {
+      COMPTEURS_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      renderCompteurs();
+    }, (err) => console.error("compteurs:", err));
   }
 
   db.collection("stock_articles").onSnapshot((snap) => {
@@ -240,17 +251,153 @@ function joursDepuis(date) {
 // ============================================================
 // Pipeline
 // ============================================================
+// ============================================================
+// Détail d'un document (offre/devis/commande/facture) — modal
+// ============================================================
+function ligneDetail(label, value) {
+  return `<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-value">${value}</span></div>`;
+}
+
+function ouvrirDetailOffre(offreId) {
+  const o = getOffre(offreId);
+  if (!o) return;
+  const devisLies = DEVIS_DATA.filter((d) => d.offreId === offreId);
+  const contenu = `
+    <h2>Offre ${o.numero || o.id}</h2>
+    <p class="required-note" style="margin-bottom:16px;">${LABELS_ETAPE_DETAIL[o.etapePipeline] || o.etapePipeline}</p>
+    ${ligneDetail("Client / prospect", getProspectNom(o.prospectId))}
+    ${ligneDetail("Titre", o.titre || "—")}
+    ${ligneDetail("Montant HTVA", (o.montantHTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("TVA (" + (o.tauxTVA ?? 21) + " %)", (o.montantTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("Total TTC", (o.montantTTC || 0).toFixed(2) + " €")}
+    ${ligneDetail("Probabilité", (o.probabilite ?? 0) + " %")}
+    ${ligneDetail("Responsable(s)", nomsResponsables(o.responsablesUids))}
+    ${ligneDetail("Statut", o.statut === "en_cours" ? "En cours" : o.statut === "gagnee" ? "Gagnée" : o.statut === "perdue" ? "Perdue" : "Abandonnée")}
+    ${o.raisonPerte ? ligneDetail("Motif de clôture", o.raisonPerte) : ""}
+    ${devisLies.length ? `<h2 style="margin-top:20px; font-size:15px;">Devis liés</h2>` + devisLies.map((d) => ligneDetail(d.reference, (d.totalTTC || 0).toFixed(2) + " € — " + (LABELS_STATUT_DEVIS[d.statut] || d.statut))).join("") : ""}
+  `;
+  afficherModalDetail(contenu);
+}
+
+function ouvrirDetailDevis(offreId, devisId) {
+  const d = DEVIS_DATA.find((x) => x.id === devisId);
+  const o = getOffre(offreId);
+  if (!d) return;
+  const contenu = `
+    <h2>Devis ${d.reference}</h2>
+    ${ligneDetail("Offre liée", o ? (o.numero || o.id) : offreId)}
+    ${ligneDetail("Client / prospect", o ? getProspectNom(o.prospectId) : "—")}
+    ${ligneDetail("Émis le", d.dateEmission ? dateToJsDate(d.dateEmission).toLocaleDateString("fr-BE") : "—")}
+    ${ligneDetail("Valide jusqu'au", d.dateValidite ? dateToJsDate(d.dateValidite).toLocaleDateString("fr-BE") : "—")}
+    ${ligneDetail("Montant HTVA", (d.montantHTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("TVA (" + (d.tauxTVA ?? 21) + " %)", (d.montantTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("Total TTC", (d.totalTTC || 0).toFixed(2) + " €")}
+    ${ligneDetail("Statut", LABELS_STATUT_DEVIS[d.statut] || d.statut)}
+    ${d.raisonRefus ? ligneDetail("Motif de refus", d.raisonRefus) : ""}
+    ${d.acceptationClient ? ligneDetail("Accepté par le client", d.acceptationClient.nom + " le " + dateToJsDate(d.acceptationClient.date).toLocaleDateString("fr-BE")) : ""}
+    ${(d.documentationTechnique || []).map((doc) => ligneDetail("Note technique", doc.description)).join("")}
+  `;
+  afficherModalDetail(contenu);
+}
+
+function ouvrirDetailCommande(commandeId) {
+  const c = COMMANDES_DATA.find((x) => x.id === commandeId);
+  if (!c) return;
+  const devis = DEVIS_DATA.find((d) => d.id === c.devisId);
+  const contenu = `
+    <h2>Commande ${c.numero}</h2>
+    ${ligneDetail("Devis lié", devis ? devis.reference : (c.devisId || "— (manuelle)"))}
+    ${ligneDetail("Client / prospect", getProspectNom(c.prospectId))}
+    ${ligneDetail("Date de commande", c.dateCommande ? dateToJsDate(c.dateCommande).toLocaleDateString("fr-BE") : "—")}
+    ${ligneDetail("Montant HTVA", (c.montantHTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("TVA (" + (c.tauxTVA ?? 21) + " %)", (c.montantTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("Total TTC", (c.montantTTC || 0).toFixed(2) + " €")}
+    ${ligneDetail("Statut", LABELS_STATUT_COMMANDE[c.statut] || c.statut)}
+    ${c.reception ? ligneDetail("Réceptionnée le", dateToJsDate(c.reception.date).toLocaleDateString("fr-BE")) : ""}
+    ${currentScope === "tout" && c.statut !== "receptionnee" ? `<button class="btn btn-secondary" id="btn-modal-supprimer-commande" data-id="${c.id}" style="margin-top:16px;">Supprimer cette commande</button>` : ""}
+  `;
+  afficherModalDetail(contenu);
+  document.getElementById("btn-modal-supprimer-commande")?.addEventListener("click", async () => {
+    if (!confirm("Supprimer définitivement cette commande ? Cette action est irréversible.")) return;
+    try {
+      await db.collection("commandes").doc(commandeId).delete();
+      fermerModalDetail();
+    } catch (err) {
+      console.error(err);
+      alert("Impossible de supprimer cette commande : " + (err.message || err.code || ""));
+    }
+  });
+}
+
+function ouvrirDetailFacture(factureId) {
+  const f = FACTURES_DATA.find((x) => x.id === factureId);
+  if (!f) return;
+  const verrouillee = !!f.exportBob?.exportee;
+  const contenu = `
+    <h2>Facture ${f.numero}</h2>
+    ${verrouillee ? `<span class="tag tag-verrou" style="margin-bottom:12px; display:inline-block;">🔒 Transférée en comptabilité — verrouillée</span>` : ""}
+    ${ligneDetail("Client / prospect", getProspectNom(f.prospectId))}
+    ${ligneDetail("Date de facturation", f.dateFacturation ? dateToJsDate(f.dateFacturation).toLocaleDateString("fr-BE") : "—")}
+    ${ligneDetail("Échéance", f.dateEcheance ? dateToJsDate(f.dateEcheance).toLocaleDateString("fr-BE") : "—")}
+    ${ligneDetail("Montant HTVA", (f.montantHTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("TVA (" + (f.tauxTVA ?? 21) + " %)", (f.montantTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("Total TTC", (f.totalTTC || 0).toFixed(2) + " €")}
+    ${ligneDetail("Statut paiement", LABELS_PAIEMENT[f.statutPaiement] || f.statutPaiement)}
+    ${!verrouillee && currentScope === "tout" && f.statutPaiement !== "payee" ? `<button class="btn btn-primary" id="btn-modal-marquer-payee" data-id="${f.id}" style="margin-top:16px;">Marquer payée</button>` : ""}
+  `;
+  afficherModalDetail(contenu);
+  document.getElementById("btn-modal-marquer-payee")?.addEventListener("click", async () => {
+    try {
+      await db.collection("factures").doc(factureId).update({ statutPaiement: "payee" });
+      ouvrirDetailFacture(factureId);
+    } catch (err) {
+      console.error(err);
+      alert("Impossible de marquer cette facture comme payée : " + (err.message || err.code || ""));
+    }
+  });
+}
+
+function afficherModalDetail(html) {
+  document.getElementById("detail-modal-content").innerHTML = html;
+  document.getElementById("detail-modal-backdrop").style.display = "flex";
+}
+function fermerModalDetail() {
+  document.getElementById("detail-modal-backdrop").style.display = "none";
+}
+document.getElementById("btn-close-detail")?.addEventListener("click", fermerModalDetail);
+document.getElementById("detail-modal-backdrop")?.addEventListener("click", (e) => {
+  if (e.target.id === "detail-modal-backdrop") fermerModalDetail();
+});
+
+const LABELS_ETAPE_DETAIL = {
+  nouveau: "Nouveau", qualifie: "Qualifié", devis_envoye: "Devis envoyé(s)",
+  devis_accepte: "Devis accepté", facture: "Facturé", client_actif: "Client actif",
+};
+
+// Délégation d'événements : fonctionne même si les liens sont regénérés à chaque rendu
+document.addEventListener("click", (e) => {
+  const lienOffre = e.target.closest(".lien-offre");
+  if (lienOffre) { e.preventDefault(); ouvrirDetailOffre(lienOffre.dataset.id); return; }
+  const lienDevis = e.target.closest(".lien-devis");
+  if (lienDevis) { e.preventDefault(); ouvrirDetailDevis(lienDevis.dataset.offre, lienDevis.dataset.devis); return; }
+  const lienCommande = e.target.closest(".lien-commande");
+  if (lienCommande) { e.preventDefault(); ouvrirDetailCommande(lienCommande.dataset.id); return; }
+  const lienFacture = e.target.closest(".lien-facture");
+  if (lienFacture) { e.preventDefault(); ouvrirDetailFacture(lienFacture.dataset.id); return; }
+});
+
 function renderPipeline() {
   const board = document.getElementById("pipeline-board");
   if (!board) return;
   board.innerHTML = "";
 
   let totalOffres = 0, devisEnvoyes = 0, clientsActifs = 0, rappelsEnRetard = 0;
+  STAT_DETAILS = { retard: [], encours: [], devisenvoyes: [], clientsactifs: [] };
 
   STAGES.forEach((stage, i) => {
     const offresForStage = OFFRES_DATA.filter((o) => o.etapePipeline === stage.key && o.statut !== "perdue" && o.statut !== "abandonnee");
-    if (stage.key !== "client_actif") totalOffres += offresForStage.length;
-    if (stage.key === "client_actif") clientsActifs = offresForStage.length;
+    if (stage.key !== "client_actif") { totalOffres += offresForStage.length; STAT_DETAILS.encours.push(...offresForStage); }
+    if (stage.key === "client_actif") { clientsActifs = offresForStage.length; STAT_DETAILS.clientsactifs.push(...offresForStage); }
 
     const col = document.createElement("div");
     col.className = "pipeline-stage";
@@ -265,26 +412,34 @@ function renderPipeline() {
     const cardsWrap = col.querySelector(".stage-cards");
 
     offresForStage.forEach((o) => {
-      const devisCount = DEVIS_DATA.filter((d) => d.offreId === o.id).length;
-      if (stage.key === "devis_envoye") devisEnvoyes += devisCount;
+      const devisPourOffre = DEVIS_DATA.filter((d) => d.offreId === o.id);
+      const devisCount = devisPourOffre.length;
+      if (stage.key === "devis_envoye") {
+        devisEnvoyes += devisCount;
+        STAT_DETAILS.devisenvoyes.push(...devisPourOffre.filter((d) => d.statut === "envoye"));
+      }
 
       const historique = o.historiqueEtapes || [];
       const derniere = historique.length ? dateToJsDate(historique[historique.length - 1].date) : null;
       const delai = DELAIS_DATA[stage.key];
       const jours = joursDepuis(derniere);
       const enRetard = delai != null && jours != null && jours > delai;
-      if (enRetard) rappelsEnRetard++;
+      if (enRetard) { rappelsEnRetard++; STAT_DETAILS.retard.push({ o, jours, etape: stage.label }); }
 
       const card = document.createElement("div");
       card.className = "card-offre";
       card.innerHTML = `
-        <div class="offre-ref">${o.numero || o.id}</div>
+        <div class="offre-ref"><a href="#" class="lien-doc lien-offre" data-id="${o.id}">${o.numero || o.id}</a></div>
         <div class="offre-prospect">${getProspectNom(o.prospectId)}</div>
         <div class="offre-meta"><span>${devisCount} devis lié(s)</span><span>${(o.montantTTC || 0).toFixed(0)} € TTC</span></div>
         ${enRetard ? `<div class="reminder-flag">⏰ ${jours} j sans mouvement</div>` : ""}
-        <button class="btn btn-secondary btn-edit-offre" data-id="${o.id}" style="padding:4px 8px;font-size:11px;margin-top:8px;">Modifier</button>
+        <div style="display:flex; gap:6px; margin-top:8px;">
+          <button class="btn btn-secondary btn-edit-offre" data-id="${o.id}" style="padding:4px 8px;font-size:11px;">Modifier</button>
+          <button class="btn btn-secondary btn-close-offre" data-id="${o.id}" style="padding:4px 8px;font-size:11px;">Clôturer</button>
+        </div>
       `;
       card.querySelector(".btn-edit-offre").addEventListener("click", () => ouvrirFormOffre(o.id));
+      card.querySelector(".btn-close-offre").addEventListener("click", () => ouvrirFormClotureOffre(o.id));
       cardsWrap.appendChild(card);
     });
 
@@ -298,11 +453,50 @@ function renderPipeline() {
     grid.children[2].querySelector(".stat-value").textContent = devisEnvoyes;
     grid.children[3].querySelector(".stat-value").textContent = clientsActifs;
   }
+  if (document.getElementById("stat-detail-panel")?.style.display === "block" && statDetailOuvert) {
+    afficherDetailStat(statDetailOuvert);
+  }
 
   renderReporting();
   renderNotifications();
   renderCalendrier();
 }
+
+let STAT_DETAILS = { retard: [], encours: [], devisenvoyes: [], clientsactifs: [] };
+let statDetailOuvert = null;
+
+const LABELS_DETAIL_STAT = {
+  retard: "Rappels en retard", encours: "Offres en cours", devisenvoyes: "Devis envoyés", clientsactifs: "Clients actifs",
+};
+
+function afficherDetailStat(type) {
+  statDetailOuvert = type;
+  const panel = document.getElementById("stat-detail-panel");
+  document.getElementById("stat-detail-titre").textContent = LABELS_DETAIL_STAT[type];
+  const liste = document.getElementById("stat-detail-liste");
+  const items = STAT_DETAILS[type] || [];
+
+  if (items.length === 0) {
+    liste.innerHTML = `<p class="required-note">Rien à afficher pour l'instant.</p>`;
+  } else if (type === "retard") {
+    liste.innerHTML = items.map((it) => `
+      <div class="cal-event"><strong>${it.o.numero || it.o.id}</strong> — ${getProspectNom(it.o.prospectId)} — ${it.jours} j sans mouvement à l'étape "${it.etape}"</div>
+    `).join("");
+  } else if (type === "devisenvoyes") {
+    liste.innerHTML = items.map((d) => `
+      <div class="cal-event"><strong>${d.reference}</strong> — ${(d.totalTTC || 0).toFixed(2)} € TTC</div>
+    `).join("");
+  } else {
+    liste.innerHTML = items.map((o) => `
+      <div class="cal-event"><strong>${o.numero || o.id}</strong> — ${getProspectNom(o.prospectId)} — ${(o.montantTTC || 0).toFixed(0)} € TTC</div>
+    `).join("");
+  }
+  panel.style.display = "block";
+}
+
+document.querySelectorAll(".clickable-stat").forEach((card) => {
+  card.addEventListener("click", () => afficherDetailStat(card.dataset.detail));
+});
 
 // ============================================================
 // Reporting (KPI, sources marketing, performance par commercial)
@@ -466,8 +660,32 @@ function demarrerEcouteChat() {
   }, (err) => { console.error("chat_general:", err); afficherErreurGlobale("Erreur de chargement du chat : " + err.message); });
 }
 
+let dernierMsgGeneral = null;
+let dernierMsgPrive = null;
+let chatEstOuvert = false;
+
+function majBadgeChat() {
+  const lastVu = parseInt(localStorage.getItem("crmamseva_chat_lastvu") || "0", 10);
+  const nonLusGeneral = dernierMsgGeneral && !chatEstOuvert && dernierMsgGeneral.uid !== currentUser.uid && dateToJsDate(dernierMsgGeneral.date).getTime() > lastVu ? 1 : 0;
+  const nonLusPrive = dernierMsgPrive && !chatEstOuvert && dernierMsgPrive.uid !== currentUser.uid && dateToJsDate(dernierMsgPrive.date).getTime() > lastVu ? 1 : 0;
+  const total = nonLusGeneral + nonLusPrive;
+
+  const badge = document.getElementById("floating-chat-count");
+  const navChat = document.querySelector('.nav-item[data-view="chat"]');
+  if (badge) { badge.style.display = total > 0 ? "inline-block" : "none"; badge.textContent = total; }
+  if (navChat) navChat.classList.toggle("a-du-nouveau", total > 0);
+}
+
+function marquerChatCommeLu() {
+  localStorage.setItem("crmamseva_chat_lastvu", Date.now().toString());
+  chatEstOuvert = true;
+  majBadgeChat();
+}
+
 function renderChatGeneral(messages) {
   const wrap = document.getElementById("chat-general-messages");
+  dernierMsgGeneral = messages.length ? messages[messages.length - 1] : null;
+  majBadgeChat();
   if (!wrap) return;
   wrap.innerHTML = messages.length ? messages.map((m) => `
     <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
@@ -498,7 +716,7 @@ document.getElementById("chat-general-input")?.addEventListener("keydown", (e) =
 function remplirSelectContacts() {
   const select = document.getElementById("chat-contact-select");
   if (!select) return;
-  select.innerHTML = ANNUAIRE_DATA.map((u) => `<option value="${u.id}">${u.nom} (${LABELS_ROLE[u.role] || u.role})</option>`).join("") || `<option value="">Aucun collègue trouvé</option>`;
+  select.innerHTML = ANNUAIRE_DATA.map((u) => `<option value="${u.id}">${u.nom}</option>`).join("") || `<option value="">Aucun collègue trouvé</option>`;
   if (ANNUAIRE_DATA.length && !conversationPriveeActuelle) ouvrirConversationPrivee(ANNUAIRE_DATA[0].id);
 }
 document.getElementById("chat-contact-select")?.addEventListener("change", (e) => ouvrirConversationPrivee(e.target.value));
@@ -516,6 +734,8 @@ function ouvrirConversationPrivee(uidContact) {
 
 function renderChatPrive(messages) {
   const wrap = document.getElementById("chat-prive-messages");
+  dernierMsgPrive = messages.length ? messages[messages.length - 1] : null;
+  majBadgeChat();
   if (!wrap) return;
   wrap.innerHTML = messages.length ? messages.map((m) => `
     <div class="chat-msg ${m.uid === currentUser.uid ? "mine" : ""}">
@@ -683,6 +903,11 @@ function renderNotifications() {
     if (notifs.length > 0) { badge.style.display = "inline-block"; badge.textContent = notifs.length; }
     else badge.style.display = "none";
   }
+  const badgeFlottant = document.getElementById("floating-notif-count");
+  if (badgeFlottant) {
+    if (notifs.length > 0) { badgeFlottant.style.display = "inline-block"; badgeFlottant.textContent = notifs.length; }
+    else badgeFlottant.style.display = "none";
+  }
 
   list.innerHTML = notifs.length
     ? notifs.map((n) => `
@@ -716,6 +941,13 @@ function renderReporting() {
   const leadsConvertis = LEADS_DATA.filter((l) => l.statut === "converti").length;
   const tauxConversion = LEADS_DATA.length ? Math.round((leadsConvertis / LEADS_DATA.length) * 100) : 0;
 
+  // Taux de réussite : offres gagnées (client_actif) vs clôturées perdues/abandonnées.
+  // Les offres encore en cours ne comptent pas — seules les offres "terminées" (dans un sens ou dans l'autre) sont prises en compte.
+  const offresGagnees = OFFRES_DATA.filter((o) => o.etapePipeline === "client_actif").length;
+  const offresPerdues = OFFRES_DATA.filter((o) => ["perdue", "abandonnee"].includes(o.statut)).length;
+  const totalTerminees = offresGagnees + offresPerdues;
+  const tauxReussite = totalTerminees ? Math.round((offresGagnees / totalTerminees) * 100) : null;
+
   kpiWrap.innerHTML = `
     <div class="stat-card highlight">
       <div class="stat-label">Pipeline total (ouvert)</div>
@@ -726,11 +958,11 @@ function renderReporting() {
       <div class="stat-value">${formatEuro(revenuPondere)}</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Leads (total)</div>
-      <div class="stat-value">${LEADS_DATA.length}</div>
+      <div class="stat-label">Taux de réussite (offres)</div>
+      <div class="stat-value">${tauxReussite != null ? tauxReussite + "%" : "—"}</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Taux de conversion</div>
+      <div class="stat-label">Taux de conversion (leads)</div>
       <div class="stat-value">${tauxConversion}%</div>
     </div>
   `;
@@ -798,7 +1030,7 @@ function renderProspects() {
     const respTexte = principal ? `${principal} ★, ${nomsResponsables((p.responsablesUids || []).filter((u) => u !== p.responsablePrincipalUid))}`.replace(/,\s*$/, "") : nomsResponsables(p.responsablesUids);
     return `
     <tr>
-      <td>${p.raisonSociale || p.nom || "—"}</td>
+      <td><a href="#" class="lien-prospect" data-id="${p.id}" style="color:var(--ink); font-weight:500; text-decoration:none;">${p.raisonSociale || p.nom || "—"}</a></td>
       <td>${p.type === "entreprise" ? "Entreprise" : "Particulier"}</td>
       <td>${p.email || "—"}</td>
       <td>${p.telephone || "—"}</td>
@@ -815,8 +1047,8 @@ function renderProspects() {
   document.querySelectorAll(".btn-give-portal").forEach((btn) => {
     btn.addEventListener("click", () => ouvrirFormPortail(btn.dataset.id));
   });
-  document.querySelectorAll(".btn-edit-prospect").forEach((btn) => {
-    btn.addEventListener("click", () => ouvrirFormProspect(btn.dataset.id));
+  document.querySelectorAll(".btn-edit-prospect, .lien-prospect").forEach((btn) => {
+    btn.addEventListener("click", (e) => { e.preventDefault(); ouvrirFormProspect(btn.dataset.id); });
   });
   document.querySelectorAll(".btn-to-client").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -993,7 +1225,7 @@ document.getElementById("lead-auto-assign")?.addEventListener("change", (e) => {
   if (!e.target.checked) {
     const select = document.getElementById("lead-responsable");
     select.innerHTML = USERS_DATA.filter((u) => ROLES_RESPONSABLES.includes(u.role))
-      .map((u) => `<option value="${u.id}">${u.nom} (${LABELS_ROLE[u.role] || u.role})</option>`).join("");
+      .map((u) => `<option value="${u.id}">${u.nom}</option>`).join("");
   }
 });
 document.getElementById("btn-save-lead")?.addEventListener("click", async () => {
@@ -1173,6 +1405,35 @@ document.getElementById("btn-confirm-apply-plan")?.addEventListener("click", asy
 });
 
 // ---------- Gestion des plans (Administration, Admin/Super Admin) ----------
+let COMPTEURS_DATA = [];
+function renderCompteurs() {
+  const tbody = document.querySelector("#compteurs-table tbody");
+  if (!tbody) return;
+  const labels = { offres: "Offres", devis: "Devis", commandes: "Commandes", factures: "Factures" };
+  tbody.innerHTML = COMPTEURS_DATA.map((c) => {
+    const [prefixe, annee] = c.id.split("_");
+    return `
+    <tr>
+      <td>${labels[prefixe] || prefixe}</td>
+      <td>${annee}</td>
+      <td>${c.dernier}</td>
+      <td><button class="btn btn-secondary btn-reset-compteur" data-id="${c.id}" style="padding:5px 10px;font-size:12px;">Remettre à 0</button></td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="4" class="required-note">Aucun compteur créé pour l'instant (ils apparaissent après la première offre/devis/commande/facture de l'année).</td></tr>`;
+
+  document.querySelectorAll(".btn-reset-compteur").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remettre ce compteur à 0 ? Le prochain numéro créé recommencera à 1.")) return;
+      try {
+        await db.collection("compteurs").doc(btn.dataset.id).update({ dernier: 0 });
+      } catch (err) {
+        console.error(err);
+        alert("Impossible de remettre ce compteur à 0 : " + (err.message || err.code || ""));
+      }
+    });
+  });
+}
+
 function renderPlans() {
   const tbody = document.querySelector("#plans-table tbody");
   if (!tbody) return;
@@ -1232,8 +1493,8 @@ function selectionMultiple(selectId) {
 
 function remplirSelectsResponsables() {
   const options = USERS_DATA
-    .filter((u) => ROLES_RESPONSABLES.includes(u.role))
-    .map((u) => `<option value="${u.id}">${u.nom} (${LABELS_ROLE[u.role] || u.role})</option>`).join("");
+    .filter((u) => ROLES_RESPONSABLES.includes(u.role) && (u.statut || "actif") === "actif")
+    .map((u) => `<option value="${u.id}">${u.nom}</option>`).join("");
   ["prospect-responsable", "offre-responsable", "lead-responsable"].forEach((id) => {
     const select = document.getElementById(id);
     if (select) select.innerHTML = options || `<option value="${currentUser.uid}">Moi</option>`;
@@ -1367,6 +1628,34 @@ document.getElementById("btn-new-offre")?.addEventListener("click", () => {
   if (prospectSelect) prospectSelect.innerHTML = PROSPECTS_DATA.map((p) => `<option value="${p.id}">${p.raisonSociale || p.nom}</option>`).join("");
   synchroniserPrincipal("offre-responsable", "offre-principal");
 });
+let offreEnCloture = null;
+function ouvrirFormClotureOffre(offreId) {
+  offreEnCloture = offreId;
+  document.getElementById("cloture-statut").value = "perdue";
+  document.getElementById("cloture-motif").value = "";
+  document.getElementById("form-close-offre").style.display = "block";
+}
+document.getElementById("btn-cancel-cloture")?.addEventListener("click", () => {
+  document.getElementById("form-close-offre").style.display = "none";
+});
+document.getElementById("btn-confirm-cloture")?.addEventListener("click", async () => {
+  const motif = document.getElementById("cloture-motif").value.trim();
+  if (!motif) {
+    alert("Merci d'indiquer un motif.");
+    return;
+  }
+  try {
+    await db.collection("offres").doc(offreEnCloture).update({
+      statut: document.getElementById("cloture-statut").value,
+      raisonPerte: motif,
+    });
+    document.getElementById("form-close-offre").style.display = "none";
+  } catch (err) {
+    console.error(err);
+    alert("Impossible de clôturer cette offre : " + (err.message || err.code || ""));
+  }
+});
+
 function ouvrirFormOffre(offreId) {
   const o = getOffre(offreId);
   if (!o) return;
@@ -1456,19 +1745,35 @@ function renderDevis() {
       colCommande = `<button class="btn btn-secondary btn-creer-commande" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Créer bon de commande</button>`;
     return `
     <tr>
-      <td>${d.reference || d.id}</td>
+      <td><a href="#" class="lien-doc lien-devis" data-offre="${d.offreId}" data-devis="${d.id}">${d.reference || d.id}</a></td>
       <td>${offre ? (offre.numero || offre.id) : d.offreId}</td>
       <td>${offre ? getProspectNom(offre.prospectId) : "—"}</td>
       <td>${d.dateEmission ? dateToJsDate(d.dateEmission).toLocaleDateString("fr-BE") : "—"}</td>
       <td>${(d.totalTTC || 0).toFixed(2)} €</td>
       <td><span class="tag ${d.statut === "accepte" ? "tag-client" : "tag-prospect"}">${LABELS_STATUT_DEVIS[d.statut] || d.statut}</span></td>
       <td>${colCommande}</td>
-      <td>${d.statut === "accepte" ? "" : `<button class="btn btn-secondary btn-accept-devis" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Marquer accepté</button>`}</td>
+      <td>${d.statut === "accepte" || d.statut === "refuse" ? (d.statut === "refuse" ? `<span class="tag tag-rupture" title="${d.raisonRefus || ""}">Refusé</span>` : "") : `
+        <button class="btn btn-secondary btn-accept-devis" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Marquer accepté</button>
+        <button class="btn btn-secondary btn-refuse-devis" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Refuser</button>
+      `}</td>
     </tr>`;
   }).join("");
 
   document.querySelectorAll(".btn-creer-commande").forEach((btn) => {
     btn.addEventListener("click", () => creerCommande(btn.dataset.offre, btn.dataset.devis));
+  });
+
+  document.querySelectorAll(".btn-refuse-devis").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const motif = prompt("Motif du refus (obligatoire) :");
+      if (!motif) return;
+      try {
+        await db.collection("offres").doc(btn.dataset.offre).collection("devis").doc(btn.dataset.devis).update({ statut: "refuse", raisonRefus: motif });
+      } catch (err) {
+        console.error(err);
+        alert("Impossible de refuser ce devis : " + (err.message || err.code || ""));
+      }
+    });
   });
 
   document.querySelectorAll(".btn-accept-devis").forEach((btn) => {
@@ -1625,7 +1930,7 @@ function renderCommandes() {
     else if (c.statut === "receptionnee" && currentScope === "tout") action = `<button class="btn btn-primary btn-generer-facture-cmd" data-id="${c.id}" style="padding:5px 10px;font-size:12px;">Générer facture</button>`;
     return `
     <tr>
-      <td>${c.numero}</td>
+      <td><a href="#" class="lien-doc lien-commande" data-id="${c.id}">${c.numero}</a></td>
       <td>${devis?.reference || c.devisId}</td>
       <td>${getProspectNom(c.prospectId)}</td>
       <td>${(c.montantTTC || 0).toFixed(2)} €</td>
@@ -1771,7 +2076,7 @@ function renderFactures() {
   if (!tbody) return;
   tbody.innerHTML = FACTURES_DATA.map((f) => `
     <tr>
-      <td>${f.numero || f.id}</td>
+      <td><a href="#" class="lien-doc lien-facture" data-id="${f.id}">${f.numero || f.id}</a></td>
       <td>${getProspectNom(f.prospectId)}</td>
       <td>${f.dateFacturation ? dateToJsDate(f.dateFacturation).toLocaleDateString("fr-BE") : "—"}</td>
       <td>${f.dateEcheance ? dateToJsDate(f.dateEcheance).toLocaleDateString("fr-BE") : "—"}</td>
@@ -1828,12 +2133,93 @@ function renderStock() {
     <tr>
       <td>${s.reference}</td>
       <td>${s.designation}</td>
+      <td>${s.ean || "—"}</td>
+      <td>${s.prixAchat != null ? s.prixAchat.toFixed(2) + " €" : "—"}</td>
+      <td>${s.prixVente != null ? s.prixVente.toFixed(2) + " €" : "—"}</td>
       <td>${s.quantiteStock}</td>
       <td>${s.seuilAlerte}</td>
       <td>${s.quantiteStock <= s.seuilAlerte ? '<span class="tag tag-rupture">Sous le seuil</span>' : '<span class="tag tag-client">OK</span>'}</td>
     </tr>
-  `).join("");
+  `).join("") || `<tr><td colspan="8" class="required-note">Aucun article pour l'instant.</td></tr>`;
 }
+
+document.getElementById("btn-new-article")?.addEventListener("click", () => {
+  ["article-code", "article-designation", "article-ean", "article-prix-achat", "article-prix-vente", "article-seuil"].forEach((id) => (document.getElementById(id).value = ""));
+  document.getElementById("article-quantite").value = "0";
+  document.getElementById("form-new-article").style.display = "block";
+});
+document.getElementById("btn-cancel-article")?.addEventListener("click", () => {
+  document.getElementById("form-new-article").style.display = "none";
+});
+document.getElementById("btn-save-article")?.addEventListener("click", async () => {
+  const reference = document.getElementById("article-code").value.trim();
+  const designation = document.getElementById("article-designation").value.trim();
+  if (!reference || !designation) {
+    alert("Le code et la désignation sont obligatoires.");
+    return;
+  }
+  try {
+    await db.collection("stock_articles").doc(reference).set({
+      reference,
+      designation,
+      ean: document.getElementById("article-ean").value.trim(),
+      prixAchat: parseFloat(document.getElementById("article-prix-achat").value) || 0,
+      prixVente: parseFloat(document.getElementById("article-prix-vente").value) || 0,
+      quantiteStock: parseInt(document.getElementById("article-quantite").value, 10) || 0,
+      seuilAlerte: parseInt(document.getElementById("article-seuil").value, 10) || 0,
+    });
+    document.getElementById("form-new-article").style.display = "none";
+  } catch (err) {
+    console.error(err);
+    alert("Impossible de créer cet article : " + (err.message || err.code || "") + (err.code === "permission-denied" ? "\n(Un code déjà utilisé par un autre article ?)" : ""));
+  }
+});
+
+// ---------- Import CSV (code;designation;ean;prixAchat;prixVente;quantite;seuil) ----------
+document.getElementById("btn-import-stock-csv")?.addEventListener("click", () => document.getElementById("stock-csv-input").click());
+document.getElementById("stock-csv-input")?.addEventListener("change", async (e) => {
+  const fichier = e.target.files[0];
+  if (!fichier) return;
+  const statusEl = document.getElementById("stock-import-status");
+  const texte = await fichier.text();
+  const lignes = texte.split("\n").map((l) => l.trim()).filter(Boolean);
+  // Ignore une éventuelle ligne d'en-tête (si la 1ère cellule n'est pas numérique/code plausible)
+  const debut = /^(code|reference|référence)/i.test(lignes[0]) ? 1 : 0;
+
+  const batch = db.batch();
+  let compte = 0;
+  for (let i = debut; i < lignes.length; i++) {
+    const cols = lignes[i].split(";").map((c) => c.trim());
+    const [code, designation, ean, prixAchat, prixVente, quantite, seuil] = cols;
+    if (!code || !designation) continue;
+    const ref = db.collection("stock_articles").doc(code);
+    batch.set(ref, {
+      reference: code,
+      designation,
+      ean: ean || "",
+      prixAchat: parseFloat(prixAchat) || 0,
+      prixVente: parseFloat(prixVente) || 0,
+      quantiteStock: parseInt(quantite, 10) || 0,
+      seuilAlerte: parseInt(seuil, 10) || 0,
+    });
+    compte++;
+  }
+
+  if (compte === 0) {
+    statusEl.textContent = "Aucune ligne valide trouvée. Format attendu, une ligne par article : code;designation;ean;prixAchatHTVA;prixVenteHTVA;quantite;seuilAlerte";
+    e.target.value = "";
+    return;
+  }
+
+  try {
+    await batch.commit();
+    statusEl.textContent = `${compte} article(s) importé(s) avec succès.`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "Erreur lors de l'import : " + (err.message || err.code || "");
+  }
+  e.target.value = "";
+});
 
 // ============================================================
 // Rappels
@@ -1912,6 +2298,10 @@ function renderUsers() {
     const caseModule = (m) => u.role === "travailleur"
       ? `<input type="checkbox" class="module-toggle" data-uid="${u.id}" data-module="${m}" ${modules.includes(m) ? "checked" : ""} style="width:auto;">`
       : "—";
+    const statut = u.statut || "actif";
+    const badgeStatut = statut === "actif" ? '<span class="tag tag-client">Actif</span>'
+      : statut === "bloque" ? '<span class="tag tag-rupture">Bloqué</span>'
+      : '<span class="tag tag-prospect">Archivé</span>';
     return `
     <tr>
       <td>${u.nom || "—"}</td>
@@ -1921,8 +2311,54 @@ function renderUsers() {
       <td>${u.email || "—"}</td>
       <td>${caseModule("pointage")}</td>
       <td>${caseModule("stock")}</td>
+      <td>${badgeStatut}</td>
+      <td style="white-space:nowrap;">
+        ${u.id === currentUser.uid ? "" : `
+          <button class="btn btn-secondary btn-reset-mdp" data-email="${u.email || ""}" style="padding:4px 8px;font-size:11px;">Réinit. MDP</button>
+          <button class="btn btn-secondary btn-toggle-block" data-id="${u.id}" data-statut="${statut}" style="padding:4px 8px;font-size:11px;">${statut === "bloque" ? "Débloquer" : "Bloquer"}</button>
+          <button class="btn btn-secondary btn-toggle-archive" data-id="${u.id}" data-statut="${statut}" style="padding:4px 8px;font-size:11px;">${statut === "archive" ? "Désarchiver" : "Archiver"}</button>
+        `}
+      </td>
     </tr>`;
   }).join("");
+
+  document.querySelectorAll(".btn-reset-mdp").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const email = btn.dataset.email;
+      if (!email) { alert("Cet utilisateur n'a pas d'email enregistré."); return; }
+      if (!confirm(`Envoyer un email de réinitialisation de mot de passe à ${email} ?`)) return;
+      try {
+        await auth.sendPasswordResetEmail(email);
+        alert("Email de réinitialisation envoyé à " + email + ".");
+      } catch (err) {
+        console.error(err);
+        alert("Impossible d'envoyer l'email : " + (err.message || err.code || ""));
+      }
+    });
+  });
+
+  document.querySelectorAll(".btn-toggle-block").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const nouveauStatut = btn.dataset.statut === "bloque" ? "actif" : "bloque";
+      try {
+        await db.collection("utilisateurs").doc(btn.dataset.id).update({ statut: nouveauStatut });
+      } catch (err) {
+        console.error(err);
+        alert("Impossible de changer le statut : " + (err.message || err.code || ""));
+      }
+    });
+  });
+  document.querySelectorAll(".btn-toggle-archive").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const nouveauStatut = btn.dataset.statut === "archive" ? "actif" : "archive";
+      try {
+        await db.collection("utilisateurs").doc(btn.dataset.id).update({ statut: nouveauStatut });
+      } catch (err) {
+        console.error(err);
+        alert("Impossible de changer le statut : " + (err.message || err.code || ""));
+      }
+    });
+  });
 
   document.querySelectorAll(".module-toggle").forEach((cb) => {
     cb.addEventListener("change", async () => {
@@ -2031,6 +2467,7 @@ document.getElementById("btn-save-user")?.addEventListener("click", async () => 
       modulesAutorises,
       equipeId,
       dateCreation: firebase.firestore.Timestamp.now(),
+      dateDernierChangementMdp: firebase.firestore.Timestamp.now(),
     });
     document.getElementById("form-new-user").style.display = "none";
     statusEl.textContent = "";
@@ -2078,12 +2515,18 @@ document.querySelectorAll(".toggle-eye").forEach((btn) => {
 });
 
 // ---------- Navigation ----------
+function afficherVue(target) {
+  document.querySelectorAll(".nav-item[data-view]").forEach((i) => i.classList.remove("active"));
+  document.querySelector(`.nav-item[data-view="${target}"]`)?.classList.add("active");
+  document.querySelectorAll("main > section").forEach((s) => (s.style.display = "none"));
+  document.getElementById("view-" + target).style.display = "block";
+  if (chatEstOuvert && target !== "chat") marquerChatCommeLu(); // on marque au moment de quitter aussi
+  chatEstOuvert = target === "chat";
+  if (chatEstOuvert) marquerChatCommeLu();
+  else majBadgeChat();
+}
 document.querySelectorAll(".nav-item[data-view]").forEach((item) => {
-  item.addEventListener("click", () => {
-    document.querySelectorAll(".nav-item[data-view]").forEach((i) => i.classList.remove("active"));
-    item.classList.add("active");
-    const target = item.dataset.view;
-    document.querySelectorAll("main > section").forEach((s) => (s.style.display = "none"));
-    document.getElementById("view-" + target).style.display = "block";
-  });
+  item.addEventListener("click", () => afficherVue(item.dataset.view));
 });
+document.getElementById("floating-notif-btn")?.addEventListener("click", () => afficherVue("notifications"));
+document.getElementById("floating-chat-btn")?.addEventListener("click", () => afficherVue("chat"));
