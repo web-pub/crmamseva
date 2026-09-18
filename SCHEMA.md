@@ -1,6 +1,6 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-033
+Version : V01-035
 
 ## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
 
@@ -159,6 +159,18 @@ Message envoyé par un client depuis son portail.
 | probabilite | number | 0-100, probabilité de réussite — `montantEstime × probabilite` = revenu pondéré de cette offre |
 | documentationTechnique | array<map> | fichiers + texte |
 
+### `notes_credit/{id}`
+Note de crédit sur vente — manuelle ou liée à une facture existante.
+| Champ | Type | Notes |
+|---|---|---|
+| numero | string | généré automatiquement, format `NC-{année}-{001}` (compteur `compteurs/notes_credit_{année}`) |
+| type | `manuelle` \| `liee` | |
+| factureId, factureNumero | string | remplis si `type = liee` |
+| prospectId | string | |
+| montantHTVA, tauxTVA, montantTVA, totalTTC | number | |
+| motif | string | obligatoire |
+| responsablesUids, equipeIds | array | hérités de la facture (si liée) ou du prospect (si manuelle) |
+
 ### `compteurs/{cle}`
 Compteurs de numérotation automatique. `cle` = `offres_{année}`, `devis_{année}`, `commandes_{année}` ou `factures_{année}` (ex. `offres_2026`), donc le compteur redémarre naturellement à 0 chaque nouvelle année civile sans action manuelle. Consultables et remettables à 0 manuellement depuis Administration > Numérotation (Admin/Super Admin).
 | Champ | Type |
@@ -169,10 +181,11 @@ Compteurs de numérotation automatique. `cle` = `offres_{année}`, `devis_{anné
 **Étapes du pipeline** : `nouveau` → `qualifie` → `devis_envoye` → `devis_accepte` → `facture` → `client_actif`
 Un rappel se déclenche automatiquement si une offre reste trop longtemps sans changement d'étape (délai configurable par étape, voir `parametres_rappels`).
 
-### `offres/{offreId}/devis/{id}` (sous-collection)
-Plusieurs devis peuvent répondre à la même offre.
+### `devis/{id}`
+Plusieurs devis peuvent répondre à la même offre. **Collection de premier niveau** (pas une sous-collection d'offre) — changement du 18/09 : les requêtes `collectionGroup` combinées à des règles utilisant `get()` (vérification du rôle) se sont révélées peu fiables sur ce projet (refus systématique malgré des règles correctes, confirmé par test direct dans la console navigateur). Passer en collection normale, avec un simple champ `offreId`, a résolu le problème.
 | Champ | Type | Notes |
 |---|---|---|
+| offreId | string | référence vers l'offre — remplace l'ancienne sous-collection |
 | reference | string | **générée automatiquement** au format `DEV-{année}-{001}` — même mécanisme de compteur annuel que les offres (`compteurs/devis_{année}`) |
 | dateEmission, dateValidite | timestamp | `dateValidite` = date d'émission + délai configurable (`parametres_rappels/devis_validite`, 30 jours par défaut) — sert à détecter les devis expirés dans les Notifications |
 | montantHTVA | number | **proposé automatiquement depuis l'offre liée** à la sélection, modifiable manuellement avant l'enregistrement |

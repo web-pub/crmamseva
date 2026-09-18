@@ -1,8 +1,31 @@
-# CRMAmseva — V01-033
+# CRMAmseva — V01-035
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
 
+## ✅ Bug de permissions sur les devis — RÉSOLU (cause trouvée)
+
+Après un diagnostic complet (comparaison octet par octet des règles publiées, test direct dans la console navigateur avec `db.collectionGroup("devis").get()`), la cause a été identifiée avec certitude : **les requêtes `collectionGroup` combinées à des règles utilisant `get()`** (notre vérification de rôle via `peutTout()`) **se comportent de façon peu fiable sur Firestore**, alors que les mêmes règles fonctionnent parfaitement sur une collection normale (`offres`, `prospects`, `commandes` fonctionnaient déjà).
+
+**Solution appliquée** : `devis` n'est plus une sous-collection de `offres/{offreId}/devis/{devisId}`, mais une **collection de premier niveau `devis/{id}`** avec un simple champ `offreId` pour faire le lien — exactement comme `factures` avec son champ `prospectId`. Toutes les requêtes utilisent maintenant `db.collection("devis")` au lieu de `db.collectionGroup("devis")`.
+
+**⚠️ Action requise :**
+1. Redéploie `firestore.rules` (le bloc Devis a changé de chemin : `match /devis/{devisId}` au lieu de `match /offres/{offreId}/devis/{devisId}`)
+2. Comme aucun devis n'existait encore en base (confirmé pendant le diagnostic), **pas de migration de données nécessaire** — repars simplement en créant tes devis normalement, ils iront directement au bon endroit
+
+## Nouveautés précédentes (V01-034)
+
+Malgré plusieurs corrections de règles, l'erreur "Missing or insufficient permissions" persiste sur les devis. Ton rôle Firestore est confirmé correct (`superadmin`). J'ai préparé un **test de bissection** pour trouver la vraie cause : remplacer temporairement la règle Devis par une version minimale (juste "connecté = accès") pour déterminer si le problème vient de la logique des rôles ou d'autre chose (mauvais projet ciblé, règles pas réellement publiées...). Voir les 3 étapes que je t'ai données dans le chat — reviens me dire "A" ou "B" et j'adapte en conséquence.
+
 ## 🆕 Nouveautés de cette version
+
+- **Génération de facture modifiable** : le bouton "Générer facture" (depuis Commandes) ouvre maintenant un formulaire — montant HTVA modifiable, **remise (%)**, **remarque**, échéance — au lieu de créer la facture instantanément avec les montants figés de la commande
+- **Note de crédit sur vente** (bouton "+ Note de crédit", onglet Factures) : manuelle (montant libre) ou liée à une facture existante (reprend ses montants, garde la référence)
+- **Modifier une commande** : bouton "Modifier" dans son détail (tant qu'elle n'est pas encore réceptionnée pour la suppression, la modification reste possible à tout moment)
+- **Anti-double-facturation** : le bouton "Générer facture" est bloqué avec un message clair si une facture existe déjà pour cette commande (vérifié à l'ouverture du formulaire ET à la confirmation, pour couvrir un double-clic rapide)
+- **Supprimer une facture** : possible depuis son détail, tant qu'elle n'est pas verrouillée (transférée en compta)
+- **Imprimer / PDF** une facture : bouton dans le détail, ouvre une page imprimable dans un nouvel onglet (Ctrl/Cmd+P → "Enregistrer en PDF" → tu choisis l'emplacement, y compris ton Drive s'il est synchronisé comme dossier local). *Une vraie intégration Google Drive (sauvegarde automatique sans passer par l'impression) demanderait l'API Google Drive avec OAuth — un projet à part, plus lourd à mettre en place.*
+
+## Nouveautés précédentes (V01-033)
 
 - **Fenêtre de détail** : clique sur la référence d'une offre, d'un devis, d'une commande ou d'une facture (dans le Pipeline ou les tableaux) pour voir tous ses champs en un coup d'œil
 - **Facture verrouillée dès son transfert en comptabilité** (export BOB) : plus aucune modification possible, **vérifié côté Firestore** (pas seulement dans l'interface) — même Super Admin ne peut plus la toucher une fois exportée

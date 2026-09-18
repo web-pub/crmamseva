@@ -27,7 +27,7 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-033</div>
+    <div class="version-tag">V01-035</div>
 
     <nav class="nav-group">
       <div class="nav-item" data-view="notifications"><span class="dot"></span> 🔔 Notifications <span class="notif-count" id="notif-count" style="display:none;">0</span></div>
@@ -529,6 +529,22 @@
         </thead>
         <tbody></tbody>
       </table>
+
+      <div class="panel-form" id="form-generer-facture" style="display:none; margin-top:24px;">
+        <h2>Générer la facture</h2>
+        <p class="required-note">Les montants sont repris de la commande — modifiables une dernière fois ci-dessous (remise, correction, remarque).</p>
+        <div class="field"><label for="genfacture-htva">Montant HTVA (€)</label><input type="number" id="genfacture-htva" step="0.01"></div>
+        <div class="field"><label for="genfacture-remise">Remise (%)</label><input type="number" id="genfacture-remise" step="1" min="0" max="100" value="0"></div>
+        <div class="field"><label for="genfacture-tva">Taux de TVA</label>
+          <select id="genfacture-tva"><option value="21">21 %</option><option value="12">12 %</option><option value="6">6 %</option><option value="0">0 %</option></select>
+        </div>
+        <div class="field"><label>Montant TVA</label><input type="text" id="genfacture-montant-tva" readonly style="background:var(--fog);"></div>
+        <div class="field"><label>Prix TTC</label><input type="text" id="genfacture-ttc" readonly style="background:var(--fog); font-weight:600;"></div>
+        <div class="field"><label for="genfacture-echeance">Échéance</label><input type="date" id="genfacture-echeance"></div>
+        <div class="field"><label for="genfacture-remarque">Remarque (optionnel)</label><textarea id="genfacture-remarque" placeholder="Visible sur la fiche facture uniquement, pas sur un document envoyé au client"></textarea></div>
+        <button class="btn btn-primary" id="btn-confirm-generer-facture">Créer la facture</button>
+        <button class="btn btn-secondary" id="btn-cancel-generer-facture">Annuler</button>
+      </div>
     </section>
 
     <!-- ===== Vue Factures ===== -->
@@ -540,6 +556,7 @@
         </div>
         <div style="display:flex; gap:10px;">
           <button class="btn btn-secondary" id="btn-new-facture">+ Nouvelle facture</button>
+          <button class="btn btn-secondary" id="btn-new-nc">+ Note de crédit</button>
           <button class="btn btn-primary" id="btn-export-bob">⬇ Exporter le CSV BOB</button>
         </div>
       </div>
@@ -559,6 +576,33 @@
         <button class="btn btn-secondary" id="btn-cancel-facture">Annuler</button>
       </div>
 
+      <div class="panel-form" id="form-new-nc" style="display:none; margin-bottom:24px;">
+        <h2>Nouvelle note de crédit</h2>
+        <div class="field"><label for="nc-type">Type</label>
+          <select id="nc-type">
+            <option value="manuelle">Manuelle (montant libre)</option>
+            <option value="liee">Liée à une facture existante</option>
+          </select>
+        </div>
+        <div class="field" id="nc-facture-field" style="display:none;">
+          <label class="field-required" for="nc-facture">Facture concernée</label>
+          <select id="nc-facture"></select>
+        </div>
+        <div class="field" id="nc-prospect-field">
+          <label class="field-required" for="nc-prospect">Prospect / client</label>
+          <select id="nc-prospect"></select>
+        </div>
+        <div class="field"><label for="nc-htva">Montant HTVA (€)</label><input type="number" id="nc-htva" step="0.01"></div>
+        <div class="field"><label for="nc-tva">Taux de TVA</label>
+          <select id="nc-tva"><option value="21">21 %</option><option value="12">12 %</option><option value="6">6 %</option><option value="0">0 %</option></select>
+        </div>
+        <div class="field"><label>Montant TVA</label><input type="text" id="nc-montant-tva" readonly style="background:var(--fog);"></div>
+        <div class="field"><label>Total TTC</label><input type="text" id="nc-ttc" readonly style="background:var(--fog); font-weight:600;"></div>
+        <div class="field"><label class="field-required" for="nc-motif">Motif</label><textarea id="nc-motif" placeholder="ex. Retour marchandise, erreur de facturation, geste commercial..."></textarea></div>
+        <button class="btn btn-primary" id="btn-save-nc">Créer la note de crédit</button>
+        <button class="btn btn-secondary" id="btn-cancel-nc">Annuler</button>
+      </div>
+
       <table class="data-table" id="factures-table">
         <thead>
           <tr><th>N° facture</th><th>Client</th><th>Date</th><th>Échéance</th><th>Total TTC</th><th>Paiement</th><th>Export BOB</th></tr>
@@ -566,6 +610,14 @@
         <tbody></tbody>
       </table>
       <p class="required-note" id="export-status" style="margin-top:12px;"></p>
+
+      <h2 style="font-size:16px; margin:28px 0 12px;">Notes de crédit</h2>
+      <table class="data-table" id="notes-credit-table">
+        <thead>
+          <tr><th>N° NC</th><th>Client</th><th>Facture liée</th><th>Total TTC</th><th>Motif</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </section>
 
     <!-- ===== Vue Rappels ===== -->

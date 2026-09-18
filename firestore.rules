@@ -1,6 +1,6 @@
 // ============================================================
 // Projet : CRMAmseva
-// Version : V01-033
+// Version : V01-035
 // Règles Firestore — authentification via Firebase Auth obligatoire.
 //
 // Rôles : superadmin, admin, direction, manager, commercial, travailleur
@@ -208,9 +208,9 @@ service cloud.firestore {
       allow update, delete: if accesCommercial(resource.data);
     }
 
-    // ---------- Devis (sous-collection d'une offre) ----------
-    // Portent leurs propres responsablesUids/equipeIds/prospectId (hérités de l'offre à la création)
-    match /offres/{offreId}/devis/{devisId} {
+    // ---------- Devis (collection de premier niveau, plus une sous-collection —
+    // porte son propre offreId ; évite le piège des requêtes collectionGroup) ----------
+    match /devis/{devisId} {
       allow read: if peutTout();
       allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(resource.data.prospectId);
       allow create: if accesCommercialCreation(request.resource.data);
@@ -242,6 +242,14 @@ service cloud.firestore {
       // Verrouillée dès qu'elle a été transférée en comptabilité (export BOB) —
       // plus aucune modification possible, même pour un Super Admin.
       allow update, delete: if peutTout() && resource.data.exportBob.exportee != true;
+    }
+
+    // ---------- Notes de crédit sur vente (manuelles ou liées à une facture) ----------
+    match /notes_credit/{ncId} {
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(resource.data.prospectId);
+      allow create: if accesCommercialCreation(request.resource.data);
+      allow update, delete: if peutTout();
     }
 
     // ---------- Pointages (heures travaillées par projet) ----------
