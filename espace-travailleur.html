@@ -27,12 +27,12 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge travailleur">Travailleur</span>
-    <div class="version-tag">V01-029</div>
+    <div class="version-tag">V01-033</div>
 
     <!-- Accès volontairement limité : uniquement pointage et stock -->
     <nav class="nav-group" id="travailleur-nav">
-      <div class="nav-item active" data-view="pointage" data-module="pointage"><span class="dot"></span> Mon pointage</div>
-      <div class="nav-item" data-view="stock-travailleur" data-module="stock"><span class="dot"></span> Stock</div>
+      <div class="nav-item active" data-view="pointage" data-module="pointage"><span class="dot"></span> ⏱️ Mon pointage</div>
+      <div class="nav-item" data-view="stock-travailleur" data-module="stock"><span class="dot"></span> 🗃️ Stock</div>
       <div class="nav-item" data-view="chat"><span class="dot"></span> 💬 Chat</div>
     </nav>
     <p class="required-note" id="no-module-msg" style="display:none; padding:0 10px;">Aucun accès activé pour ton compte. Demande à un administrateur de t'attribuer un module.</p>
@@ -41,6 +41,13 @@
   </aside>
 
   <main class="main-content">
+
+    <div class="floating-icons">
+      <div class="floating-icon-btn" id="floating-chat-btn" title="Chat">
+        💬<span class="notif-count" id="floating-chat-count" style="display:none;">0</span>
+      </div>
+    </div>
+
 
     <!-- ===== Vue Pointage ===== -->
     <section id="view-pointage">

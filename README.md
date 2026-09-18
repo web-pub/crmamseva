@@ -1,8 +1,72 @@
-# CRMAmseva — V01-029
+# CRMAmseva — V01-033
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
 
-## 💬 Chat entre collègues (dernier point du cahier des charges, terminé)
+## 🆕 Nouveautés de cette version
+
+- **Fenêtre de détail** : clique sur la référence d'une offre, d'un devis, d'une commande ou d'une facture (dans le Pipeline ou les tableaux) pour voir tous ses champs en un coup d'œil
+- **Facture verrouillée dès son transfert en comptabilité** (export BOB) : plus aucune modification possible, **vérifié côté Firestore** (pas seulement dans l'interface) — même Super Admin ne peut plus la toucher une fois exportée
+- **"Marquer payée"** : nouveau bouton dans le détail d'une facture non encore verrouillée
+- **Supprimer une commande** : possible depuis son détail, tant qu'elle n'est pas encore réceptionnée
+- La facturation automatique à la réception n'a pas été confirmée — le bouton manuel "Générer facture" reste donc en place, comme avant
+
+## Nouveautés précédentes (V01-032)
+
+- **Tuiles du Pipeline cliquables** : "Rappels en retard", "Offres en cours", "Devis envoyés", "Clients actifs" — cliquer ouvre le détail de ce qu'il y a derrière le chiffre
+- **Fiche prospect cliquable** : le nom dans le tableau Prospects ouvre directement l'édition (en plus du bouton "Modifier")
+- **Icônes flottantes** en haut à droite (🔔 notifications, 💬 chat), visibles sur toutes les pages du tableau de bord et de l'espace Travailleur — avec badge de compte
+- **Badge "nouveau message"** : le lien "Chat" passe en rouge et un chiffre apparaît sur la bulle flottante quand un message arrive sans que tu regardes le chat. *(Limite technique honnête : c'est une approximation simple basée sur l'horodatage de ta dernière visite du chat dans ce navigateur — pas un vrai suivi précis par conversation. Voir la note dans `SCHEMA.md`.)*
+- **Mots de passe** : bouton "Réinit. MDP" (Administration > Utilisateurs) envoie un email de réinitialisation — *Admin/Super Admin ne peuvent pas directement définir le mot de passe de quelqu'un d'autre sans backend (Cloud Function), donc c'est la solution disponible*. Une bannière d'avertissement s'affiche à la connexion si le mot de passe a plus de 3 mois (pas de blocage forcé)
+
+## Nouveautés précédentes (V01-031)
+
+- **Gestion des comptes** : boutons "Bloquer" / "Archiver" par utilisateur (Administration > Utilisateurs) — un compte bloqué ou archivé ne peut plus se connecter, **mais rien n'est supprimé** : son historique (offres, prospects...) reste intact, il est juste exclu des listes de sélection pour de nouvelles attributions
+- **Clôturer une offre** (bouton sur chaque carte du Pipeline) : motif obligatoire, statut "Perdue" ou "Abandonnée" — l'offre sort du pipeline actif mais reste comptée dans le nouveau KPI **"Taux de réussite"** (Reporting)
+- **Refuser un devis** (bouton dans l'onglet Devis) : motif obligatoire, même logique
+- **Onglet Administration > Numérotation** : consulte les compteurs actuels (offres/devis/commandes/factures par année) et remets-en un à 0 manuellement si besoin — sinon, ça se fait tout seul chaque nouvelle année
+- **Rôles masqués partout sauf en Administration** : les listes de responsables, le contact du chat, etc. n'affichent plus le rôle de personne — seul ton propre badge (dans la barre latérale) et le tableau de gestion des utilisateurs (Admin/Super Admin) continuent de montrer les rôles, puisque c'est nécessaire pour les gérer
+- Ordre nom/rôle inversé partout où ça restait affiché avant cette demande
+
+## Corrections précédentes (V01-030)
+
+**Redéploie impérativement `firestore.rules` maintenant** (`firebase deploy --only firestore:rules`), puis reconnecte-toi (déconnexion/reconnexion, pas juste un rafraîchissement de page).
+
+Cause probable identifiée : quand une règle de lecture mélange, avec `||`, une condition qui ne dépend PAS des données du document (ex. "je suis Super Admin") et des conditions qui EN dépendent (ex. "je suis dans la liste des responsables"), Firestore peut refuser la requête entière — même pour le Super Admin — dès que la requête n'est pas filtrée par un `where()` correspondant. C'était le cas pour `devis`, `offres`, `prospects`, `leads`, `activites`, `commandes`, `factures`, `messages_clients` et `utilisateurs`. Chaque règle concernée est maintenant scindée en deux lignes `allow read` séparées : une pour le cas "gestion" (sans référence aux données), une pour le cas "portée restreinte" (avec la référence aux données). C'est plus sûr et plus explicite.
+
+**Cette fois, reteste avec le fichier `firestore.rules` de CE ZIP précisément** (pas une version copiée manuellement d'un message précédent) pour être sûre d'avoir la bonne version.
+
+## 🔍 Réponse à ta question sur les index Firestore
+
+La fenêtre "Créer un index" que tu as montrée (capture 3) est pour les **index composites** (plusieurs champs combinés) — ce n'est **pas** ce qu'il fallait pour nos requêtes `array-contains` sur un seul champ. Ne remplis pas cette fenêtre pour l'instant : avec le correctif de règles ci-dessus, il est possible qu'aucun index supplémentaire ne soit nécessaire. Si un vrai message d'erreur d'index apparaît (différent de "permissions" — il ressemble à *"The query requires an index. You can create it here : https://..."*), clique simplement le lien fourni : Firebase pré-remplit tout automatiquement, c'est plus fiable qu'une saisie manuelle.
+
+## 🛠️ Corrections et ajouts rapides de cette version
+
+- **Stock** : le bouton "+ Nouvel article" ne faisait rien — corrigé, avec en plus code EAN, prix d'achat/vente HTVA, et un **import CSV** (`code;designation;ean;prixAchatHTVA;prixVenteHTVA;quantite;seuilAlerte`, une ligne par article)
+- **Icônes** devant chaque titre du menu (comme pour le Chat)
+- **Alignement** : l'icône maison est maintenant sur la même ligne que le logo, à droite du bloc sombre
+- **Page de connexion** : "CRMAmseva" devient "CRM" centré sous le logo ; le sous-titre est centré et simplifié ("Accès réservé aux travailleurs d'AM Seva.") ; "Demande ton accès..." passe à la ligne suivante, raccourci ("Hélène" au lieu de "Hélène Laruelle (administratrice)")
+
+## En attente — pas encore traité
+- Confirmer : la facture doit-elle se créer automatiquement à la confirmation de réception (au lieu du bouton manuel "Générer facture") ?
+
+## Traité dans cette version (V01-033)
+- ~~Détail cliquable d'une offre/devis/commande/facture~~ — fait
+- ~~Verrouillage d'une facture transférée en compta~~ — fait (vérifié côté Firestore)
+
+## Traité précédemment (V01-032)
+- ~~Cliquer sur une tuile du Pipeline~~ — fait
+- ~~Modifier une fiche prospect/client~~ — fait (nom cliquable en plus du bouton)
+- ~~Icône de notification globale~~ — fait
+- ~~Badge de messages non lus~~ — fait (approximation simple, voir note ci-dessus)
+- ~~Politique de mots de passe~~ — fait (email de réinitialisation + avertissement 90 jours)
+
+## Traité précédemment (V01-031)
+- ~~Gestion des utilisateurs : bloquer / archiver~~ — fait
+- ~~Clôturer une offre/un devis avec motif, garder dans les stats~~ — fait
+- ~~Onglet Administration dédié à la numérotation~~ — fait
+- ~~Déplacer/masquer le rôle affiché à côté des noms~~ — fait (rôles masqués partout sauf Administration)
+
+## Corrections précédentes (V01-029)
 
 - **Canal général** + **messages privés (1-à-1)**, accessibles depuis le tableau de bord principal **et** depuis l'espace Travailleur
 - Liste de contacts alimentée par un **annuaire léger** (nom + rôle uniquement, jamais l'email ni le mot de passe), rempli automatiquement à la connexion de chacun — rien à configurer

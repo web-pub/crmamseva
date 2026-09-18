@@ -1,6 +1,6 @@
 // ============================================================
 // Projet : CRMAmseva
-// Version : V01-029
+// Version : V01-033
 // Règles Firestore — authentification via Firebase Auth obligatoire.
 //
 // Rôles : superadmin, admin, direction, manager, commercial, travailleur
@@ -107,7 +107,8 @@ service cloud.firestore {
     // déterminer son rôle à la connexion) ; lire les autres fiches, créer
     // ou modifier des comptes est réservé aux admins.
     match /utilisateurs/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isAdminOrAbove() || getRole() == "direction");
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isAdminOrAbove() || getRole() == "direction";
       allow create: if isAdminOrAbove();
       // Un utilisateur peut mettre à jour SA PROPRE date de dernière connexion
       // (rien d'autre) — utile pour l'afficher dans l'onglet mots de passe
@@ -155,7 +156,8 @@ service cloud.firestore {
 
     // ---------- Activités (appels, emails, relances liés à un lead/offre) ----------
     match /activites/{activiteId} {
-      allow read: if accesCommercial(resource.data);
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids);
       allow create: if accesCommercialCreation(request.resource.data);
       allow update, delete: if accesCommercial(resource.data);
     }
@@ -170,14 +172,16 @@ service cloud.firestore {
 
     // ---------- Leads (contacts pas encore qualifiés) ----------
     match /leads/{leadId} {
-      allow read: if accesCommercial(resource.data);
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids);
       allow create: if accesCommercialCreation(request.resource.data);
       allow update, delete: if accesCommercial(resource.data);
     }
 
     // ---------- Prospects / Clients ----------
     match /prospects/{prospectId} {
-      allow read: if accesCommercial(resource.data) || estClientDe(prospectId);
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(prospectId);
       allow create: if accesCommercialCreation(request.resource.data);
       allow update, delete: if accesCommercial(resource.data);
     }
@@ -190,14 +194,16 @@ service cloud.firestore {
 
     // ---------- Messages envoyés par un client depuis son portail ----------
     match /messages_clients/{messageId} {
-      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(resource.data.prospectId);
       allow create: if estUtilisateurPortail() && request.resource.data.prospectId == monPortail().prospectId;
       allow update, delete: if accesCommercial(resource.data);
     }
 
     // ---------- Offres ----------
     match /offres/{offreId} {
-      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(resource.data.prospectId);
       allow create: if accesCommercialCreation(request.resource.data);
       allow update, delete: if accesCommercial(resource.data);
     }
@@ -205,7 +211,8 @@ service cloud.firestore {
     // ---------- Devis (sous-collection d'une offre) ----------
     // Portent leurs propres responsablesUids/equipeIds/prospectId (hérités de l'offre à la création)
     match /offres/{offreId}/devis/{devisId} {
-      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(resource.data.prospectId);
       allow create: if accesCommercialCreation(request.resource.data);
       // Le client peut accepter SON devis : seuls les champs statut/acceptationClient changent, vers "accepte"
       allow update: if accesCommercial(resource.data) ||
@@ -219,7 +226,8 @@ service cloud.firestore {
     match /commandes/{commandeId} {
       // Un travailleur peut consulter la liste des commandes (pour pointer dessus),
       // sans pour autant avoir accès aux autres données commerciales
-      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId) || isTravailleur();
+      allow read: if peutTout() || isTravailleur();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(resource.data.prospectId);
       allow create: if accesCommercialCreation(request.resource.data);
       allow update, delete: if accesCommercial(resource.data);
     }
@@ -228,8 +236,12 @@ service cloud.firestore {
     // Lecture ouverte au(x) commercial(aux)/manager concerné(s) ET au client portail
     // propriétaire ; création/modification (paiement, export BOB) réservée à peutTout().
     match /factures/{factureId} {
-      allow read: if accesCommercial(resource.data) || estClientDe(resource.data.prospectId);
-      allow write: if peutTout();
+      allow read: if peutTout();
+      allow read: if estManagerDeCetEquipe(resource.data.equipeIds) || estUnDesResponsables(resource.data.responsablesUids) || estClientDe(resource.data.prospectId);
+      allow create: if peutTout();
+      // Verrouillée dès qu'elle a été transférée en comptabilité (export BOB) —
+      // plus aucune modification possible, même pour un Super Admin.
+      allow update, delete: if peutTout() && resource.data.exportBob.exportee != true;
     }
 
     // ---------- Pointages (heures travaillées par projet) ----------

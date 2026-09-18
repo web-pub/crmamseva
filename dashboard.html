@@ -27,30 +27,40 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-029</div>
+    <div class="version-tag">V01-033</div>
 
     <nav class="nav-group">
       <div class="nav-item" data-view="notifications"><span class="dot"></span> 🔔 Notifications <span class="notif-count" id="notif-count" style="display:none;">0</span></div>
-      <div class="nav-item active" data-view="pipeline"><span class="dot"></span> Offres &amp; Pipeline</div>
-      <div class="nav-item" data-view="leads"><span class="dot"></span> Leads</div>
-      <div class="nav-item" data-view="prospects"><span class="dot"></span> Prospects</div>
-      <div class="nav-item" data-view="devis"><span class="dot"></span> Devis</div>
-      <div class="nav-item" data-view="commandes"><span class="dot"></span> Commandes</div>
-      <div class="nav-item" data-view="factures" data-restrict="tout"><span class="dot"></span> Factures</div>
-      <div class="nav-item" data-view="stock"><span class="dot"></span> Stock</div>
-      <div class="nav-item" data-view="activites"><span class="dot"></span> Activités</div>
-      <div class="nav-item" data-view="pointage"><span class="dot"></span> Mon pointage</div>
-      <div class="nav-item" data-view="calendrier"><span class="dot"></span> Calendrier</div>
+      <div class="nav-item active" data-view="pipeline"><span class="dot"></span> 🧭 Offres &amp; Pipeline</div>
+      <div class="nav-item" data-view="leads"><span class="dot"></span> 🌱 Leads</div>
+      <div class="nav-item" data-view="prospects"><span class="dot"></span> 👤 Prospects</div>
+      <div class="nav-item" data-view="devis"><span class="dot"></span> 📄 Devis</div>
+      <div class="nav-item" data-view="commandes"><span class="dot"></span> 📦 Commandes</div>
+      <div class="nav-item" data-view="factures" data-restrict="tout"><span class="dot"></span> 🧾 Factures</div>
+      <div class="nav-item" data-view="stock"><span class="dot"></span> 🗃️ Stock</div>
+      <div class="nav-item" data-view="activites"><span class="dot"></span> ✅ Activités</div>
+      <div class="nav-item" data-view="pointage"><span class="dot"></span> ⏱️ Mon pointage</div>
+      <div class="nav-item" data-view="calendrier"><span class="dot"></span> 📅 Calendrier</div>
       <div class="nav-item" data-view="chat"><span class="dot"></span> 💬 Chat</div>
-      <div class="nav-item" data-view="reporting"><span class="dot"></span> Reporting</div>
-      <div class="nav-item" data-view="rappels" data-restrict="tout"><span class="dot"></span> Rappels</div>
-      <div class="nav-item" data-view="admin" data-restrict="gestion"><span class="dot"></span> Administration</div>
+      <div class="nav-item" data-view="reporting"><span class="dot"></span> 📊 Reporting</div>
+      <div class="nav-item" data-view="rappels" data-restrict="tout"><span class="dot"></span> ⏰ Rappels</div>
+      <div class="nav-item" data-view="admin" data-restrict="gestion"><span class="dot"></span> ⚙️ Administration</div>
     </nav>
     <div style="flex:1;"></div>
     <div class="nav-item" id="btn-logout" style="margin-top:16px; border-top:1px solid #33383A; padding-top:16px;"><span class="dot"></span> Se déconnecter</div>
   </aside>
 
   <main class="main-content">
+
+    <div class="floating-icons">
+      <div class="floating-icon-btn" id="floating-notif-btn" title="Notifications">
+        🔔<span class="notif-count" id="floating-notif-count" style="display:none;">0</span>
+      </div>
+      <div class="floating-icon-btn" id="floating-chat-btn" title="Chat">
+        💬<span class="notif-count" id="floating-chat-count" style="display:none;">0</span>
+      </div>
+    </div>
+
 
     <!-- ===== Vue Calendrier ===== -->
     <section id="view-calendrier" style="display:none;">
@@ -304,21 +314,28 @@
       </div>
 
       <div class="stat-grid">
-        <div class="stat-card highlight">
+        <div class="stat-card highlight clickable-stat" data-detail="retard">
           <div class="stat-label">Rappels en retard</div>
           <div class="stat-value">3</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable-stat" data-detail="encours">
           <div class="stat-label">Offres en cours</div>
           <div class="stat-value">12</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable-stat" data-detail="devisenvoyes">
           <div class="stat-label">Devis envoyés</div>
           <div class="stat-value">7</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card clickable-stat" data-detail="clientsactifs">
           <div class="stat-label">Clients actifs</div>
           <div class="stat-value">24</div>
+        </div>
+      </div>
+
+      <div id="stat-detail-panel" style="display:none; margin-bottom:24px;">
+        <div class="panel-form">
+          <h2 id="stat-detail-titre"></h2>
+          <div id="stat-detail-liste"></div>
         </div>
       </div>
 
@@ -338,6 +355,17 @@
         <div class="field"><label for="offre-principal">Responsable principal</label><select id="offre-principal"></select></div>
         <button class="btn btn-primary" id="btn-save-offre">Créer l'offre</button>
         <button class="btn btn-secondary" id="btn-cancel-offre">Annuler</button>
+      </div>
+
+      <div class="panel-form" id="form-close-offre" style="display:none; margin-bottom:24px;">
+        <h2>Clôturer l'offre</h2>
+        <p class="required-note">L'offre reste visible dans les statistiques (taux de réussite), elle ne sera juste plus active dans le pipeline.</p>
+        <div class="field"><label for="cloture-statut">Résultat</label>
+          <select id="cloture-statut"><option value="perdue">Perdue</option><option value="abandonnee">Abandonnée</option></select>
+        </div>
+        <div class="field"><label class="field-required" for="cloture-motif">Motif</label><textarea id="cloture-motif" placeholder="ex. Prix trop élevé, concurrent choisi, projet reporté..."></textarea></div>
+        <button class="btn btn-primary" id="btn-confirm-cloture">Confirmer la clôture</button>
+        <button class="btn btn-secondary" id="btn-cancel-cloture">Annuler</button>
       </div>
 
       <div class="pipeline" id="pipeline-board">
@@ -400,11 +428,31 @@
           <h1>Stock</h1>
           <div class="subtitle">Articles, quantités et mouvements</div>
         </div>
-        <button class="btn btn-primary">+ Nouvel article</button>
+        <div style="display:flex; gap:10px;" id="stock-admin-actions">
+          <button class="btn btn-secondary" id="btn-import-stock-csv">⬆ Importer CSV</button>
+          <button class="btn btn-primary" id="btn-new-article">+ Nouvel article</button>
+        </div>
       </div>
+
+      <div class="panel-form" id="form-new-article" style="display:none; margin-bottom:24px;">
+        <h2>Nouvel article</h2>
+        <div class="field"><label class="field-required" for="article-code">Code unique</label><input type="text" id="article-code" placeholder="ex. PC-0090"></div>
+        <div class="field"><label class="field-required" for="article-designation">Désignation</label><input type="text" id="article-designation"></div>
+        <div class="field"><label for="article-ean">Code EAN</label><input type="text" id="article-ean"></div>
+        <div class="field"><label for="article-prix-achat">Prix d'achat HTVA (€)</label><input type="number" id="article-prix-achat" step="0.01"></div>
+        <div class="field"><label for="article-prix-vente">Prix de vente HTVA (€)</label><input type="number" id="article-prix-vente" step="0.01"></div>
+        <div class="field"><label class="field-required" for="article-quantite">Quantité en stock</label><input type="number" id="article-quantite" step="1" value="0"></div>
+        <div class="field"><label for="article-seuil">Seuil d'alerte réapprovisionnement</label><input type="number" id="article-seuil" step="1" placeholder="ex. 10"></div>
+        <button class="btn btn-primary" id="btn-save-article">Créer l'article</button>
+        <button class="btn btn-secondary" id="btn-cancel-article">Annuler</button>
+      </div>
+
+      <input type="file" id="stock-csv-input" accept=".csv" style="display:none;">
+      <p class="required-note" id="stock-import-status"></p>
+
       <table class="data-table" id="stock-table">
         <thead>
-          <tr><th>Référence</th><th>Désignation</th><th>Qté en stock</th><th>Seuil alerte</th><th>Statut</th></tr>
+          <tr><th>Référence</th><th>Désignation</th><th>EAN</th><th>Prix achat</th><th>Prix vente</th><th>Qté en stock</th><th>Seuil alerte</th><th>Statut</th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -555,6 +603,7 @@
       <div class="tabs">
         <div class="tab-item active" data-tab="tab-users">Utilisateurs</div>
         <div class="tab-item" data-tab="tab-plans">Plans d'activités</div>
+        <div class="tab-item" data-tab="tab-numerotation">Numérotation</div>
         <div class="tab-item" data-tab="tab-content">Contenu du site</div>
         <div class="tab-item" data-tab="tab-passwords">Mots de passe (Super Admin)</div>
       </div>
@@ -565,7 +614,7 @@
           <button class="btn btn-primary" id="btn-new-user">+ Nouvel utilisateur</button>
         </div>
         <table class="data-table" id="users-table">
-          <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Équipe</th><th>Email</th><th>Pointage</th><th>Stock</th></tr></thead>
+          <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Équipe</th><th>Email</th><th>Pointage</th><th>Stock</th><th>Statut</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
 
@@ -639,6 +688,14 @@
         </div>
       </div>
 
+      <div id="tab-numerotation" class="tab-panel" style="display:none;">
+        <p class="subtitle" style="margin:20px 0;">Compteurs annuels utilisés pour la numérotation automatique (offres, devis, commandes, factures). La numérotation reprend automatiquement à 0 chaque nouvelle année — utilise "Remettre à 0" seulement si tu as besoin de la réinitialiser manuellement en cours d'année.</p>
+        <table class="data-table" id="compteurs-table">
+          <thead><tr><th>Compteur</th><th>Année</th><th>Dernier numéro attribué</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
       <div id="tab-content" class="tab-panel" style="display:none;">
         <p class="subtitle" style="margin:20px 0;">Textes des pages publiques — modifiables ici, aucun contenu n'est figé dans le code.</p>
         <div class="field"><label>Titre de la page de connexion</label><input type="text" value="Connexion"></div>
@@ -656,6 +713,13 @@
     </section>
 
   </main>
+</div>
+
+<div id="detail-modal-backdrop" class="detail-modal-backdrop" style="display:none;">
+  <div class="detail-modal">
+    <button class="detail-modal-close" id="btn-close-detail">✕</button>
+    <div id="detail-modal-content"></div>
+  </div>
 </div>
 
 <script src="assets/app.js"></script>

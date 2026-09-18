@@ -1,6 +1,6 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-029
+Version : V01-033
 
 ## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
 
@@ -55,6 +55,8 @@ Séparé des comptes internes (comme la distinction Odoo "utilisateurs internes"
 | equipeId | string | **Rôles commercial/manager uniquement.** Nom d'équipe en texte libre — un Manager et ses Commerciaux doivent porter exactement le même nom pour que le filtrage fonctionne |
 | dateCreation | timestamp | |
 | derniereConnexion | timestamp | mise à jour automatiquement à chaque connexion réussie (`assets/auth.js`) ; affichée dans Administration > Mots de passe (Super Admin), format `JJ/MM/AA - HH:MM` |
+| statut | `actif` \| `bloque` \| `archive` | Un compte `bloque` ou `archive` ne peut plus se connecter (vérifié dans `assets/auth.js`), mais **ses données ne sont jamais supprimées** — il reste visible dans les historiques (offres/prospects déjà attribués, etc.), juste exclu des listes "Responsable" pour les nouvelles attributions. Basculé depuis Administration > Utilisateurs |
+| dateDernierChangementMdp | timestamp | fixé à la création du compte ; si plus de 90 jours, une bannière d'avertissement s'affiche à la connexion. Pas de blocage forcé — Admin/Super Admin peuvent envoyer un **email de réinitialisation** (bouton "Réinit. MDP") ; changer directement le mot de passe de quelqu'un d'autre nécessiterait le SDK Admin (Cloud Function), indisponible sans backend |
 
 Il n'y a plus de demande d'accès en libre-service : c'est l'Admin/Super Admin qui crée directement chaque compte (Auth + fiche Firestore) depuis Administration > Utilisateurs. Techniquement, la création du compte Firebase Authentication passe par une **app Firebase secondaire** temporaire (voir `creerCompteAuth()` dans `assets/app.js`), pour éviter que l'admin ne soit déconnecté de sa propre session pendant l'opération.
 
@@ -150,7 +152,7 @@ Message envoyé par un client depuis son portail.
 | responsablePrincipalUid | string | lequel des `responsablesUids` est désigné "principal" — modifiable à tout moment en rouvrant la fiche |
 | equipeIds | array | dénormalisé depuis les fiches des responsables |
 | statut | `en_cours` \| `gagnee` \| `perdue` \| `abandonnee` | |
-| raisonPerte | string | si perdue |
+| raisonPerte | string | **motif obligatoire de clôture**, saisi via le bouton "Clôturer" sur la carte de l'offre (Pipeline) — l'offre disparaît du pipeline actif mais reste comptée dans le "Taux de réussite" (Reporting) |
 | leadOrigineId | string | présent si cette offre est née d'un lead converti |
 | montantHTVA, tauxTVA, montantTVA, montantTTC | number | saisi en HTVA + taux, TVA et TTC calculés en direct dans le formulaire |
 | montantEstime | number | = `montantHTVA`, conservé pour le calcul du pipeline total et du revenu pondéré (Reporting) |
@@ -158,7 +160,7 @@ Message envoyé par un client depuis son portail.
 | documentationTechnique | array<map> | fichiers + texte |
 
 ### `compteurs/{cle}`
-Compteurs de numérotation automatique. `cle` = `offres_{année}` ou `devis_{année}` (ex. `offres_2026`), donc le compteur redémarre naturellement à 0 chaque nouvelle année civile sans action manuelle.
+Compteurs de numérotation automatique. `cle` = `offres_{année}`, `devis_{année}`, `commandes_{année}` ou `factures_{année}` (ex. `offres_2026`), donc le compteur redémarre naturellement à 0 chaque nouvelle année civile sans action manuelle. Consultables et remettables à 0 manuellement depuis Administration > Numérotation (Admin/Super Admin).
 | Champ | Type |
 |---|---|
 | dernier | number |
@@ -181,6 +183,7 @@ Plusieurs devis peuvent répondre à la même offre.
 | pdfUrl | string | généré |
 | responsablesUids, equipeIds, prospectId | array/string | **hérités automatiquement de l'offre parente** à la création, pour que les règles de portée (perso/équipe) et l'accès portail client s'appliquent aussi aux devis |
 | acceptationClient | map | `{nom, date}` — rempli quand le client accepte le devis depuis son portail (confirmation simple par saisie du nom, pas une vraie signature électronique) |
+| raisonRefus | string | rempli via le bouton "Refuser" (onglet Devis) — le devis reste visible avec son motif, compté dans les statistiques |
 
 ### `commandes/{id}`
 Bon de commande, créé depuis un devis accepté — étape intermédiaire entre le devis et la facture, avec confirmation de réception avant facturation (demande d'Hélène).
@@ -207,7 +210,8 @@ Cycle complet : devis **accepté** → bouton "Créer bon de commande" (Devis) �
 | dateFacturation, dateEcheance | timestamp | |
 | montantHTVA, tauxTVA, montantTVA, totalTTC | number | repris de la commande (donc du devis) |
 | statutPaiement | `a_payer` \| `payee` \| `en_retard` | |
-| exportBob | map | `{exportee: bool, dateExport, formatCsv}` |
+| exportBob | map | `{exportee: bool, dateExport, formatCsv}` — **dès que `exportee` passe à `true`, la facture est verrouillée** (aucune modification possible, même Super Admin, vérifié dans `firestore.rules`) |
+| statutPaiement mis à jour via | bouton "Marquer payée" dans la fenêtre de détail (clic sur le numéro de facture) — désactivé si déjà verrouillée |
 | responsablesUids, equipeIds | array | hérités de la commande/du devis/de l'offre d'origine — **génération** réservée à superadmin/admin/direction (bouton "Générer facture" sur une commande réceptionnée) ; **lecture** ouverte au(x) commercial(aux)/manager concerné(s) |
 
 ### `pointages/{id}`
@@ -222,13 +226,16 @@ Heures travaillées, ouvert à **tous les rôles internes** (pas seulement Trava
 | statut | `en_attente` \| `valide` | Admin/Super Admin voient et valident les feuilles de temps de tout le monde (vue "Toutes les feuilles de temps" dans Mon pointage) |
 
 ### `stock_articles/{id}`
+L'ID du document = `reference` (le "code unique" saisi par l'utilisateur), pour éviter les doublons — créer un article avec un code déjà existant écrase l'ancien (à corriger plus tard si besoin d'un vrai contrôle de doublon avec message d'erreur).
 | Champ | Type |
 |---|---|
-| reference, designation, description | string |
+| reference, designation | string |
+| ean | string (optionnel) |
 | quantiteStock | number |
-| seuilAlerte | number |
-| prixAchat, prixVente | number |
-| fournisseur | string (optionnel) |
+| seuilAlerte | number — déclenche le badge "Sous le seuil" (réapprovisionnement) |
+| prixAchat, prixVente | number (HTVA) |
+
+**Création** : formulaire "+ Nouvel article", ou **import CSV** ("⬆ Importer CSV") — une ligne par article, colonnes séparées par `;` : `code;designation;ean;prixAchatHTVA;prixVenteHTVA;quantite;seuilAlerte`. Une éventuelle ligne d'en-tête commençant par "code"/"reference"/"référence" est ignorée automatiquement. Réservé à Admin/Super Admin/Direction (comme la gestion du stock en général).
 
 ### `stock_mouvements/{id}`
 | Champ | Type | Notes |
@@ -264,7 +271,17 @@ Pas de collection dédiée : calculées **côté client** (`renderNotifications(
 - Prospects sans offre depuis plus de `prospect_inactif` jours (à relancer)
 - Commandes en attente de réception depuis plus de 14 jours (seuil fixe pour l'instant)
 
-Un badge sur l'item de menu "🔔 Notifications" affiche le nombre total ; cliquer une notification ouvre directement la vue concernée.
+Un badge sur l'item de menu "🔔 Notifications" affiche le nombre total ; cliquer une notification ouvre directement la vue concernée. Une icône flottante identique (en haut à droite de l'écran, visible sur toutes les pages) affiche le même badge.
+
+## Détail d'un document (modal)
+
+Cliquer sur la référence d'une offre, d'un devis, d'une commande ou d'une facture (dans le Pipeline, ou les tableaux Devis/Commandes/Factures) ouvre une fenêtre de détail (`ouvrirDetailOffre()`, `ouvrirDetailDevis()`, `ouvrirDetailCommande()`, `ouvrirDetailFacture()` dans `assets/app.js`) — lecture complète des champs, plus :
+- **Commande** : bouton "Supprimer" (si pas encore réceptionnée)
+- **Facture** : bouton "Marquer payée" (si pas encore verrouillée) ; badge "🔒 Transférée en comptabilité" si `exportBob.exportee` est vrai
+
+## Icônes flottantes (notifications + chat)
+
+En haut à droite de `dashboard.html` (cloche + bulle) et `espace-travailleur.html` (bulle seule) : toujours visibles, quelle que soit la section affichée. Le badge de chat est une **approximation simple** basée sur un horodatage "dernière visite" stocké dans `localStorage` du navigateur (pas de suivi précis par conversation ni par appareil) — suffisant pour signaler "il y a du nouveau", pas pour un compteur exact multi-conversations.
 
 ## Calendrier
 
