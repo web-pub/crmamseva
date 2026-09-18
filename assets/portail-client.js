@@ -47,8 +47,8 @@ function demarrerEcouteurs() {
     renderOffres();
   }, (err) => console.error("offres:", err));
 
-  db.collectionGroup("devis").where("prospectId", "==", monProspectId).onSnapshot((snap) => {
-    DEVIS_DATA = snap.docs.map((d) => ({ id: d.id, offreId: d.ref.parent.parent.id, ...d.data() }));
+  db.collection("devis").where("prospectId", "==", monProspectId).onSnapshot((snap) => {
+    DEVIS_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderDevis();
   }, (err) => console.error("devis:", err));
 
@@ -115,7 +115,7 @@ document.getElementById("btn-confirm-accept")?.addEventListener("click", async (
     return;
   }
   try {
-    await db.collection("offres").doc(devisEnCoursAcceptation.offreId).collection("devis").doc(devisEnCoursAcceptation.devisId).update({
+    await db.collection("devis").doc(devisEnCoursAcceptation.devisId).update({
       statut: "accepte",
       acceptationClient: { nom, date: firebase.firestore.Timestamp.now() },
     });

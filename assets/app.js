@@ -167,8 +167,8 @@ function demarrerEcouteursFirestore() {
     renderPipeline();
   }, (err) => { console.error("offres:", err); afficherErreurGlobale("Erreur de chargement des offres : " + err.message); });
 
-  avecPortee(db.collectionGroup("devis")).onSnapshot((snap) => {
-    DEVIS_DATA = snap.docs.map((d) => ({ id: d.id, offreId: d.ref.parent.parent.id, ...d.data() }));
+  avecPortee(db.collection("devis")).onSnapshot((snap) => {
+    DEVIS_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderDevis();
     renderPipeline();
   }, (err) => { console.error("devis:", err); afficherErreurGlobale("Erreur de chargement des devis : " + err.message + " — si le message parle d'index, vérifie qu'ils sont bien créés et \"Activé\" (pas \"En cours de création\") dans Firestore > Index."); });
@@ -184,6 +184,11 @@ function demarrerEcouteursFirestore() {
     FACTURES_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderFactures();
   }, (err) => console.error("factures:", err));
+
+  avecPortee(db.collection("notes_credit")).onSnapshot((snap) => {
+    NOTES_CREDIT_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderNotesCredit();
+  }, (err) => console.error("notes_credit:", err));
 
   if (currentScope === "tout") {
     db.collection("rappels").onSnapshot((snap) => {
@@ -300,35 +305,6 @@ function ouvrirDetailDevis(offreId, devisId) {
   afficherModalDetail(contenu);
 }
 
-function ouvrirDetailCommande(commandeId) {
-  const c = COMMANDES_DATA.find((x) => x.id === commandeId);
-  if (!c) return;
-  const devis = DEVIS_DATA.find((d) => d.id === c.devisId);
-  const contenu = `
-    <h2>Commande ${c.numero}</h2>
-    ${ligneDetail("Devis lié", devis ? devis.reference : (c.devisId || "— (manuelle)"))}
-    ${ligneDetail("Client / prospect", getProspectNom(c.prospectId))}
-    ${ligneDetail("Date de commande", c.dateCommande ? dateToJsDate(c.dateCommande).toLocaleDateString("fr-BE") : "—")}
-    ${ligneDetail("Montant HTVA", (c.montantHTVA || 0).toFixed(2) + " €")}
-    ${ligneDetail("TVA (" + (c.tauxTVA ?? 21) + " %)", (c.montantTVA || 0).toFixed(2) + " €")}
-    ${ligneDetail("Total TTC", (c.montantTTC || 0).toFixed(2) + " €")}
-    ${ligneDetail("Statut", LABELS_STATUT_COMMANDE[c.statut] || c.statut)}
-    ${c.reception ? ligneDetail("Réceptionnée le", dateToJsDate(c.reception.date).toLocaleDateString("fr-BE")) : ""}
-    ${currentScope === "tout" && c.statut !== "receptionnee" ? `<button class="btn btn-secondary" id="btn-modal-supprimer-commande" data-id="${c.id}" style="margin-top:16px;">Supprimer cette commande</button>` : ""}
-  `;
-  afficherModalDetail(contenu);
-  document.getElementById("btn-modal-supprimer-commande")?.addEventListener("click", async () => {
-    if (!confirm("Supprimer définitivement cette commande ? Cette action est irréversible.")) return;
-    try {
-      await db.collection("commandes").doc(commandeId).delete();
-      fermerModalDetail();
-    } catch (err) {
-      console.error(err);
-      alert("Impossible de supprimer cette commande : " + (err.message || err.code || ""));
-    }
-  });
-}
-
 function ouvrirDetailFacture(factureId) {
   const f = FACTURES_DATA.find((x) => x.id === factureId);
   if (!f) return;
@@ -343,7 +319,11 @@ function ouvrirDetailFacture(factureId) {
     ${ligneDetail("TVA (" + (f.tauxTVA ?? 21) + " %)", (f.montantTVA || 0).toFixed(2) + " €")}
     ${ligneDetail("Total TTC", (f.totalTTC || 0).toFixed(2) + " €")}
     ${ligneDetail("Statut paiement", LABELS_PAIEMENT[f.statutPaiement] || f.statutPaiement)}
+    ${f.remise ? ligneDetail("Remise appliquée", f.remise + " %") : ""}
+    ${f.remarque ? ligneDetail("Remarque", f.remarque) : ""}
     ${!verrouillee && currentScope === "tout" && f.statutPaiement !== "payee" ? `<button class="btn btn-primary" id="btn-modal-marquer-payee" data-id="${f.id}" style="margin-top:16px;">Marquer payée</button>` : ""}
+    ${!verrouillee && currentScope === "tout" ? `<button class="btn btn-secondary" id="btn-modal-print-facture" style="margin-top:16px;">🖨️ Imprimer / PDF</button>` : ""}
+    ${!verrouillee && currentScope === "tout" ? `<button class="btn btn-secondary" id="btn-modal-supprimer-facture" data-id="${f.id}" style="margin-top:16px;">Supprimer</button>` : ""}
   `;
   afficherModalDetail(contenu);
   document.getElementById("btn-modal-marquer-payee")?.addEventListener("click", async () => {
@@ -355,6 +335,48 @@ function ouvrirDetailFacture(factureId) {
       alert("Impossible de marquer cette facture comme payée : " + (err.message || err.code || ""));
     }
   });
+  document.getElementById("btn-modal-print-facture")?.addEventListener("click", () => imprimerFacture(f));
+  document.getElementById("btn-modal-supprimer-facture")?.addEventListener("click", async () => {
+    if (!confirm("Supprimer définitivement cette facture ? Cette action est irréversible.")) return;
+    try {
+      await db.collection("factures").doc(factureId).delete();
+      fermerModalDetail();
+    } catch (err) {
+      console.error(err);
+      alert("Impossible de supprimer cette facture : " + (err.message || err.code || ""));
+    }
+  });
+}
+
+function imprimerFacture(f) {
+  const prospect = PROSPECTS_DATA.find((p) => p.id === f.prospectId);
+  const fenetre = window.open("", "_blank");
+  fenetre.document.write(`
+    <html><head><title>${f.numero}</title>
+    <style>
+      body { font-family: Georgia, serif; padding: 40px; color: #1A1D1F; }
+      h1 { font-size: 22px; margin-bottom: 4px; }
+      .meta { color: #5B6068; margin-bottom: 24px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      td { padding: 8px 0; border-bottom: 1px solid #ddd; }
+      .total { font-weight: bold; font-size: 18px; }
+    </style></head>
+    <body>
+      <h1>AM Seva SA</h1>
+      <p class="meta">Rue de Waremme 104, 4530 Villers-le-Bouillet — TVA BE0445.679.168</p>
+      <h2>Facture ${f.numero}</h2>
+      <p>Client : ${prospect ? (prospect.raisonSociale || prospect.nom) : "—"}</p>
+      <p>Date : ${f.dateFacturation ? dateToJsDate(f.dateFacturation).toLocaleDateString("fr-BE") : "—"} — Échéance : ${f.dateEcheance ? dateToJsDate(f.dateEcheance).toLocaleDateString("fr-BE") : "—"}</p>
+      <table>
+        <tr><td>Montant HTVA</td><td style="text-align:right;">${(f.montantHTVA || 0).toFixed(2)} €</td></tr>
+        <tr><td>TVA (${f.tauxTVA ?? 21} %)</td><td style="text-align:right;">${(f.montantTVA || 0).toFixed(2)} €</td></tr>
+        <tr class="total"><td>Total TTC</td><td style="text-align:right;">${(f.totalTTC || 0).toFixed(2)} €</td></tr>
+      </table>
+      ${f.remarque ? `<p style="margin-top:20px;"><em>${f.remarque}</em></p>` : ""}
+    </body></html>
+  `);
+  fenetre.document.close();
+  setTimeout(() => fenetre.print(), 300);
 }
 
 function afficherModalDetail(html) {
@@ -1547,6 +1569,23 @@ function brancherCalculTVA(idHTVA, idTaux, idMontantTVA, idTTC) {
   document.getElementById(idTaux)?.addEventListener("change", recalculer);
   return recalculer;
 }
+
+// Même chose, mais avec une remise (%) appliquée au HTVA avant calcul de la TVA/TTC
+function brancherRemiseTVA(idHTVA, idRemise, idTaux, idMontantTVA, idTTC) {
+  const recalculer = () => {
+    const htvaBrut = parseFloat(document.getElementById(idHTVA).value) || 0;
+    const remise = parseFloat(document.getElementById(idRemise).value) || 0;
+    const htva = htvaBrut * (1 - remise / 100);
+    const taux = parseFloat(document.getElementById(idTaux).value) || 0;
+    const montantTVA = htva * (taux / 100);
+    document.getElementById(idMontantTVA).value = montantTVA.toFixed(2) + " €";
+    document.getElementById(idTTC).value = (htva + montantTVA).toFixed(2) + " €";
+  };
+  document.getElementById(idHTVA)?.addEventListener("input", recalculer);
+  document.getElementById(idRemise)?.addEventListener("input", recalculer);
+  document.getElementById(idTaux)?.addEventListener("change", recalculer);
+  return recalculer;
+}
 const recalculerOffreTVA = brancherCalculTVA("offre-htva", "offre-tva", "offre-montant-tva", "offre-ttc");
 const recalculerDevisTVA = brancherCalculTVA("devis-htva", "devis-tva", "devis-montant-tva", "devis-ttc");
 
@@ -1655,6 +1694,54 @@ document.getElementById("btn-confirm-cloture")?.addEventListener("click", async 
     alert("Impossible de clôturer cette offre : " + (err.message || err.code || ""));
   }
 });
+
+function ouvrirDetailCommande(commandeId) {
+  const c = COMMANDES_DATA.find((x) => x.id === commandeId);
+  if (!c) return;
+  const devis = DEVIS_DATA.find((d) => d.id === c.devisId);
+  const contenu = `
+    <h2>Commande ${c.numero}</h2>
+    ${ligneDetail("Devis lié", devis ? devis.reference : (c.devisId || "— (manuelle)"))}
+    ${ligneDetail("Client / prospect", getProspectNom(c.prospectId))}
+    ${ligneDetail("Date de commande", c.dateCommande ? dateToJsDate(c.dateCommande).toLocaleDateString("fr-BE") : "—")}
+    ${ligneDetail("Montant HTVA", (c.montantHTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("TVA (" + (c.tauxTVA ?? 21) + " %)", (c.montantTVA || 0).toFixed(2) + " €")}
+    ${ligneDetail("Total TTC", (c.montantTTC || 0).toFixed(2) + " €")}
+    ${ligneDetail("Statut", LABELS_STATUT_COMMANDE[c.statut] || c.statut)}
+    ${c.reception ? ligneDetail("Réceptionnée le", dateToJsDate(c.reception.date).toLocaleDateString("fr-BE")) : ""}
+    ${currentScope === "tout" ? `<button class="btn btn-secondary" id="btn-modal-modifier-commande" data-id="${c.id}" style="margin-top:16px;">Modifier</button>` : ""}
+    ${currentScope === "tout" && c.statut !== "receptionnee" ? `<button class="btn btn-secondary" id="btn-modal-supprimer-commande" data-id="${c.id}" style="margin-top:16px;">Supprimer cette commande</button>` : ""}
+  `;
+  afficherModalDetail(contenu);
+  document.getElementById("btn-modal-modifier-commande")?.addEventListener("click", () => {
+    fermerModalDetail();
+    ouvrirFormEditCommande(commandeId);
+  });
+  document.getElementById("btn-modal-supprimer-commande")?.addEventListener("click", async () => {
+    if (!confirm("Supprimer définitivement cette commande ? Cette action est irréversible.")) return;
+    try {
+      await db.collection("commandes").doc(commandeId).delete();
+      fermerModalDetail();
+    } catch (err) {
+      console.error(err);
+      alert("Impossible de supprimer cette commande : " + (err.message || err.code || ""));
+    }
+  });
+}
+
+let commandeEnEdition = null;
+function ouvrirFormEditCommande(commandeId) {
+  const c = COMMANDES_DATA.find((x) => x.id === commandeId);
+  if (!c) return;
+  commandeEnEdition = c;
+  remplirSelectProspectsPourFormulaire("commande-prospect");
+  document.getElementById("commande-prospect").value = c.prospectId;
+  document.getElementById("commande-htva").value = c.montantHTVA || 0;
+  document.getElementById("commande-tva").value = c.tauxTVA ?? 21;
+  recalculerCommandeTVA();
+  document.querySelector("#form-new-commande h2").textContent = "Modifier la commande " + c.numero;
+  document.getElementById("form-new-commande").style.display = "block";
+}
 
 function ouvrirFormOffre(offreId) {
   const o = getOffre(offreId);
@@ -1768,7 +1855,7 @@ function renderDevis() {
       const motif = prompt("Motif du refus (obligatoire) :");
       if (!motif) return;
       try {
-        await db.collection("offres").doc(btn.dataset.offre).collection("devis").doc(btn.dataset.devis).update({ statut: "refuse", raisonRefus: motif });
+        await db.collection("devis").doc(btn.dataset.devis).update({ statut: "refuse", raisonRefus: motif });
       } catch (err) {
         console.error(err);
         alert("Impossible de refuser ce devis : " + (err.message || err.code || ""));
@@ -1780,7 +1867,7 @@ function renderDevis() {
     btn.addEventListener("click", async () => {
       const { offre, devis } = btn.dataset;
       try {
-        await db.collection("offres").doc(offre).collection("devis").doc(devis).update({ statut: "accepte" });
+        await db.collection("devis").doc(devis).update({ statut: "accepte" });
         await db.collection("offres").doc(offre).update({
           etapePipeline: "devis_accepte",
           historiqueEtapes: firebase.firestore.FieldValue.arrayUnion({ etape: "devis_accepte", date: firebase.firestore.Timestamp.now() }),
@@ -1830,6 +1917,8 @@ function remplirSelectProspectsPourFormulaire(selectId) {
   if (select) select.innerHTML = PROSPECTS_DATA.map((p) => `<option value="${p.id}">${p.raisonSociale || p.nom}</option>`).join("");
 }
 document.getElementById("btn-new-commande")?.addEventListener("click", () => {
+  commandeEnEdition = null;
+  document.querySelector("#form-new-commande h2").textContent = "Nouvelle commande (manuelle)";
   remplirSelectProspectsPourFormulaire("commande-prospect");
   document.getElementById("commande-htva").value = "";
   document.getElementById("commande-tva").value = "21";
@@ -1849,25 +1938,32 @@ document.getElementById("btn-save-commande")?.addEventListener("click", async ()
   const prospect = PROSPECTS_DATA.find((p) => p.id === prospectId);
 
   try {
-    const { annee, numero } = await genererNumeroAnnuel("commandes", 3);
-    await db.collection("commandes").add({
-      numero: `BC-${annee}-${numero}`,
-      offreId: null,
-      devisId: null,
-      prospectId,
-      montantHTVA,
-      tauxTVA,
-      montantTVA,
-      montantTTC: montantHTVA + montantTVA,
-      statut: "en_attente",
-      dateCommande: firebase.firestore.Timestamp.now(),
-      responsablesUids: prospect?.responsablesUids || [currentUser.uid],
-      equipeIds: prospect?.equipeIds || [],
-    });
+    if (commandeEnEdition) {
+      await db.collection("commandes").doc(commandeEnEdition.id).update({
+        prospectId, montantHTVA, tauxTVA, montantTVA, montantTTC: montantHTVA + montantTVA,
+      });
+      commandeEnEdition = null;
+    } else {
+      const { annee, numero } = await genererNumeroAnnuel("commandes", 3);
+      await db.collection("commandes").add({
+        numero: `BC-${annee}-${numero}`,
+        offreId: null,
+        devisId: null,
+        prospectId,
+        montantHTVA,
+        tauxTVA,
+        montantTVA,
+        montantTTC: montantHTVA + montantTVA,
+        statut: "en_attente",
+        dateCommande: firebase.firestore.Timestamp.now(),
+        responsablesUids: prospect?.responsablesUids || [currentUser.uid],
+        equipeIds: prospect?.equipeIds || [],
+      });
+    }
     document.getElementById("form-new-commande").style.display = "none";
   } catch (err) {
     console.error(err);
-    alert("Impossible de créer cette commande : " + (err.message || err.code || ""));
+    alert("Impossible d'enregistrer cette commande : " + (err.message || err.code || ""));
   }
 });
 
@@ -1953,7 +2049,7 @@ function renderCommandes() {
     });
   });
   document.querySelectorAll(".btn-generer-facture-cmd").forEach((btn) => {
-    btn.addEventListener("click", () => genererFacture(btn.dataset.id));
+    btn.addEventListener("click", () => ouvrirFormGenererFacture(btn.dataset.id));
   });
   renderDevis(); // la colonne "Commande" du tableau Devis dépend de COMMANDES_DATA
   remplirSelectCommandes();
@@ -1961,29 +2057,61 @@ function renderCommandes() {
   renderCalendrier();
 }
 
-async function genererFacture(commandeId) {
+let commandeAFacturer = null;
+const recalculerGenFactureTVA = brancherRemiseTVA("genfacture-htva", "genfacture-remise", "genfacture-tva", "genfacture-montant-tva", "genfacture-ttc");
+
+function ouvrirFormGenererFacture(commandeId) {
   const commande = COMMANDES_DATA.find((c) => c.id === commandeId);
   if (!commande) return;
+  if (FACTURES_DATA.some((f) => f.commandeId === commandeId)) {
+    alert("Une facture existe déjà pour cette commande. Impossible d'en générer une deuxième.");
+    return;
+  }
+  commandeAFacturer = commandeId;
+  document.getElementById("genfacture-htva").value = commande.montantHTVA || 0;
+  document.getElementById("genfacture-remise").value = 0;
+  document.getElementById("genfacture-tva").value = commande.tauxTVA ?? 21;
+  document.getElementById("genfacture-echeance").value = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  document.getElementById("genfacture-remarque").value = "";
+  recalculerGenFactureTVA();
+  document.getElementById("form-generer-facture").style.display = "block";
+}
+document.getElementById("btn-cancel-generer-facture")?.addEventListener("click", () => {
+  document.getElementById("form-generer-facture").style.display = "none";
+});
+document.getElementById("btn-confirm-generer-facture")?.addEventListener("click", async () => {
+  const commande = COMMANDES_DATA.find((c) => c.id === commandeAFacturer);
+  if (!commande) return;
+  if (FACTURES_DATA.some((f) => f.commandeId === commandeAFacturer)) {
+    alert("Une facture a déjà été créée pour cette commande entre-temps. Actualise la page pour la voir.");
+    document.getElementById("form-generer-facture").style.display = "none";
+    return;
+  }
   const devis = DEVIS_DATA.find((d) => d.id === commande.devisId);
   const offre = getOffre(commande.offreId);
 
-  const { annee, numero: num } = await genererNumeroAnnuel("factures", 3);
-  const numero = `FAC-${annee}-${num}`;
-  const dateFacturation = firebase.firestore.Timestamp.now();
-  const dateEcheance = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 86400000));
+  const remise = parseFloat(document.getElementById("genfacture-remise").value) || 0;
+  const montantHTVA = (parseFloat(document.getElementById("genfacture-htva").value) || 0) * (1 - remise / 100);
+  const tauxTVA = parseFloat(document.getElementById("genfacture-tva").value) || 0;
+  const montantTVA = montantHTVA * (tauxTVA / 100);
+  const echeanceStr = document.getElementById("genfacture-echeance").value;
+  const remarque = document.getElementById("genfacture-remarque").value;
 
   try {
+    const { annee, numero: num } = await genererNumeroAnnuel("factures", 3);
     await db.collection("factures").add({
-      numero,
+      numero: `FAC-${annee}-${num}`,
       prospectId: commande.prospectId,
       devisRef: { offreId: commande.offreId, devisId: commande.devisId },
-      commandeId,
-      dateFacturation,
-      dateEcheance,
-      montantHTVA: commande.montantHTVA || 0,
-      tauxTVA: commande.tauxTVA || 0,
-      montantTVA: commande.montantTVA || 0,
-      totalTTC: commande.montantTTC || 0,
+      commandeId: commandeAFacturer,
+      dateFacturation: firebase.firestore.Timestamp.now(),
+      dateEcheance: echeanceStr ? firebase.firestore.Timestamp.fromDate(new Date(echeanceStr)) : firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 30 * 86400000)),
+      montantHTVA,
+      tauxTVA,
+      montantTVA,
+      totalTTC: montantHTVA + montantTVA,
+      remise,
+      remarque,
       statutPaiement: "a_payer",
       exportBob: { exportee: false },
       responsablesUids: commande.responsablesUids || devis?.responsablesUids || offre?.responsablesUids || [],
@@ -1995,11 +2123,12 @@ async function genererFacture(commandeId) {
         historiqueEtapes: firebase.firestore.FieldValue.arrayUnion({ etape: "facture", date: firebase.firestore.Timestamp.now() }),
       });
     }
+    document.getElementById("form-generer-facture").style.display = "none";
   } catch (err) {
     console.error(err);
-    alert("Impossible de générer la facture.");
+    alert("Impossible de générer la facture : " + (err.message || err.code || ""));
   }
-}
+});
 
 document.getElementById("btn-new-devis")?.addEventListener("click", () => {
   if (OFFRES_DATA.length === 0) {
@@ -2037,7 +2166,8 @@ document.getElementById("btn-save-devis")?.addEventListener("click", async () =>
   try {
     const offre = getOffre(offreId);
     const { annee, numero } = await genererNumeroAnnuel("devis", 3);
-    await db.collection("offres").doc(offreId).collection("devis").add({
+    await db.collection("devis").add({
+      offreId,
       reference: `DEV-${annee}-${numero}`,
       montantHTVA,
       tauxTVA,
@@ -2086,6 +2216,104 @@ function renderFactures() {
     </tr>
   `).join("");
 }
+
+// ============================================================
+// Notes de crédit sur vente — manuelles ou liées à une facture
+// ============================================================
+let NOTES_CREDIT_DATA = [];
+const recalculerNcTVA = brancherCalculTVA("nc-htva", "nc-tva", "nc-montant-tva", "nc-ttc");
+
+function renderNotesCredit() {
+  const tbody = document.querySelector("#notes-credit-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = NOTES_CREDIT_DATA.map((nc) => `
+    <tr>
+      <td>${nc.numero}</td>
+      <td>${getProspectNom(nc.prospectId)}</td>
+      <td>${nc.factureNumero || "—"}</td>
+      <td>${(nc.totalTTC || 0).toFixed(2)} €</td>
+      <td>${nc.motif || "—"}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="5" class="required-note">Aucune note de crédit pour l'instant.</td></tr>`;
+}
+
+document.getElementById("btn-new-nc")?.addEventListener("click", () => {
+  document.getElementById("nc-type").value = "manuelle";
+  document.getElementById("nc-facture-field").style.display = "none";
+  document.getElementById("nc-prospect-field").style.display = "block";
+  document.getElementById("nc-facture").innerHTML = FACTURES_DATA.map((f) => `<option value="${f.id}">${f.numero} — ${getProspectNom(f.prospectId)}</option>`).join("");
+  remplirSelectProspectsPourFormulaire("nc-prospect");
+  document.getElementById("nc-htva").value = "";
+  document.getElementById("nc-tva").value = "21";
+  document.getElementById("nc-motif").value = "";
+  recalculerNcTVA();
+  document.getElementById("form-new-nc").style.display = "block";
+});
+document.getElementById("btn-cancel-nc")?.addEventListener("click", () => {
+  document.getElementById("form-new-nc").style.display = "none";
+});
+document.getElementById("nc-type")?.addEventListener("change", (e) => {
+  const liee = e.target.value === "liee";
+  document.getElementById("nc-facture-field").style.display = liee ? "block" : "none";
+  document.getElementById("nc-prospect-field").style.display = liee ? "none" : "block";
+});
+document.getElementById("nc-facture")?.addEventListener("change", (e) => {
+  const facture = FACTURES_DATA.find((f) => f.id === e.target.value);
+  if (facture) {
+    document.getElementById("nc-htva").value = facture.montantHTVA || 0;
+    document.getElementById("nc-tva").value = facture.tauxTVA ?? 21;
+    recalculerNcTVA();
+  }
+});
+document.getElementById("btn-save-nc")?.addEventListener("click", async () => {
+  const type = document.getElementById("nc-type").value;
+  const motif = document.getElementById("nc-motif").value.trim();
+  if (!motif) { alert("Le motif est obligatoire."); return; }
+
+  const montantHTVA = parseFloat(document.getElementById("nc-htva").value) || 0;
+  const tauxTVA = parseFloat(document.getElementById("nc-tva").value) || 0;
+  const montantTVA = montantHTVA * (tauxTVA / 100);
+
+  let prospectId, factureId = null, factureNumero = null, responsablesUids = [currentUser.uid], equipeIds = [];
+  if (type === "liee") {
+    const facture = FACTURES_DATA.find((f) => f.id === document.getElementById("nc-facture").value);
+    if (!facture) { alert("Sélectionne une facture."); return; }
+    prospectId = facture.prospectId;
+    factureId = facture.id;
+    factureNumero = facture.numero;
+    responsablesUids = facture.responsablesUids || responsablesUids;
+    equipeIds = facture.equipeIds || equipeIds;
+  } else {
+    prospectId = document.getElementById("nc-prospect").value;
+    if (!prospectId) { alert("Sélectionne un prospect/client."); return; }
+    const prospect = PROSPECTS_DATA.find((p) => p.id === prospectId);
+    responsablesUids = prospect?.responsablesUids || responsablesUids;
+    equipeIds = prospect?.equipeIds || equipeIds;
+  }
+
+  try {
+    const { annee, numero } = await genererNumeroAnnuel("notes_credit", 3);
+    await db.collection("notes_credit").add({
+      numero: `NC-${annee}-${numero}`,
+      type,
+      prospectId,
+      factureId,
+      factureNumero,
+      montantHTVA,
+      tauxTVA,
+      montantTVA,
+      totalTTC: montantHTVA + montantTVA,
+      motif,
+      dateCreation: firebase.firestore.Timestamp.now(),
+      responsablesUids,
+      equipeIds,
+    });
+    document.getElementById("form-new-nc").style.display = "none";
+  } catch (err) {
+    console.error(err);
+    alert("Impossible de créer cette note de crédit : " + (err.message || err.code || ""));
+  }
+});
 
 async function exportCsvBob() {
   const aExporter = FACTURES_DATA.filter((f) => !f.exportBob?.exportee);
