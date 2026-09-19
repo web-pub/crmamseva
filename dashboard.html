@@ -27,7 +27,7 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-035</div>
+    <div class="version-tag">V01-036</div>
 
     <nav class="nav-group">
       <div class="nav-item" data-view="notifications"><span class="dot"></span> 🔔 Notifications <span class="notif-count" id="notif-count" style="display:none;">0</span></div>
@@ -468,9 +468,13 @@
         <button class="btn btn-primary" id="btn-new-devis">+ Nouveau devis</button>
       </div>
 
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); margin-bottom:12px;">
+        <input type="checkbox" id="chk-voir-archives-devis" style="width:auto;"> Afficher aussi les devis archivés
+      </label>
+
       <table class="data-table" id="devis-table">
         <thead>
-          <tr><th>Référence</th><th>Offre liée</th><th>Client / prospect</th><th>Émis le</th><th>Total TTC</th><th>Statut</th><th>Commande</th><th></th></tr>
+          <tr><th>Référence</th><th>Offre liée</th><th>Client / prospect</th><th>Émis le</th><th>Total TTC</th><th>Statut</th><th>Commande</th><th></th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>

@@ -1,8 +1,14 @@
-# CRMAmseva — V01-035
+# CRMAmseva — V01-036
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
 
-## ✅ Bug de permissions sur les devis — RÉSOLU (cause trouvée)
+## 🆕 Corrections de cette version
+
+- **Icônes flottantes qui chevauchaient les boutons d'en-tête** ("+ Nouveau devis", etc.) sur toutes les pages : corrigé — l'espace en haut du contenu est maintenant réservé pour elles
+- **Noms de responsable non résolus** (UID brut affiché au lieu du nom) : la cause était un rafraîchissement manquant — les tableaux (Prospects, Pipeline, Leads, Devis, Commandes, Factures, Activités, Pointages) ne se remettaient pas à jour quand la liste des utilisateurs finissait de charger après eux. Corrigé : toutes ces vues se rafraîchissent maintenant automatiquement dès que les utilisateurs sont chargés
+- **Archiver un devis** : nouveau bouton (tableau Devis + fenêtre de détail). Un devis archivé est masqué de la liste par défaut (case à cocher pour l'afficher quand même), mais **jamais supprimé** — reste consultable en détail à tout moment
+
+## ✅ Bug de permissions sur les devis — RÉSOLU (V01-035)
 
 Après un diagnostic complet (comparaison octet par octet des règles publiées, test direct dans la console navigateur avec `db.collectionGroup("devis").get()`), la cause a été identifiée avec certitude : **les requêtes `collectionGroup` combinées à des règles utilisant `get()`** (notre vérification de rôle via `peutTout()`) **se comportent de façon peu fiable sur Firestore**, alors que les mêmes règles fonctionnent parfaitement sur une collection normale (`offres`, `prospects`, `commandes` fonctionnaient déjà).
 

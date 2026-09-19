@@ -1,6 +1,6 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-035
+Version : V01-036
 
 ## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
 
@@ -196,6 +196,7 @@ Plusieurs devis peuvent répondre à la même offre. **Collection de premier niv
 | pdfUrl | string | généré |
 | responsablesUids, equipeIds, prospectId | array/string | **hérités automatiquement de l'offre parente** à la création, pour que les règles de portée (perso/équipe) et l'accès portail client s'appliquent aussi aux devis |
 | acceptationClient | map | `{nom, date}` — rempli quand le client accepte le devis depuis son portail (confirmation simple par saisie du nom, pas une vraie signature électronique) |
+| archive | boolean | masqué de la liste par défaut (case "Afficher aussi les devis archivés" pour le voir), mais **jamais supprimé** — reste consultable en détail à tout moment |
 | raisonRefus | string | rempli via le bouton "Refuser" (onglet Devis) — le devis reste visible avec son motif, compté dans les statistiques |
 
 ### `commandes/{id}`
