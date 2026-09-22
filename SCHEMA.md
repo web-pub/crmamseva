@@ -1,6 +1,6 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-037
+Version : V01-038
 
 ## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
 

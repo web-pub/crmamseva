@@ -1,8 +1,15 @@
-# CRMAmseva — V01-037
+# CRMAmseva — V01-038
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
 
-## 🎯 Refonte du pipeline commercial (processus décrit par Hélène le 18/09)
+## 🎨 Palette alignée sur le vrai site amseva.be
+
+- **Bleu marine profond** (`#101B4D`, repris de la bannière du site) pour la barre latérale et les éléments structurants
+- **Orange** (`#F2A730`, la couleur des boutons "Contactez-nous"/"Prendre rendez-vous" du site) devient la couleur principale : boutons, liens, onglet/étape active, éléments interactifs
+- **Boutons en forme de pilule** (arrondis complets), comme sur le site
+- Les couleurs de statut (vert = succès, rouge = alerte) restent inchangées — ce sont des couleurs de sens, pas de marque
+
+## 🎯 Refonte du pipeline commercial (V01-037)
 
 - **Nouvelles étapes**, entièrement manuelles : Nouveau → Offre à faire → Offre envoyée → Négociation → Gagné. **Plus aucun avancement automatique** depuis les devis/commandes/factures — c'est toi qui décides quand une offre change d'étape.
 - **Glisser-déposer** : les cartes du Pipeline se déplacent maintenant à la souris d'une colonne à l'autre
