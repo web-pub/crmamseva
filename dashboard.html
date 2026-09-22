@@ -27,7 +27,7 @@
 
     <div class="site-title">CRMAmseva</div>
     <span class="role-badge super-admin" id="role-badge">Super Admin</span>
-    <div class="version-tag">V01-036</div>
+    <div class="version-tag">V01-037</div>
 
     <nav class="nav-group">
       <div class="nav-item" data-view="notifications"><span class="dot"></span> 🔔 Notifications <span class="notif-count" id="notif-count" style="display:none;">0</span></div>
@@ -344,6 +344,33 @@
         <p class="required-note">Numéro attribué automatiquement à l'enregistrement (ex. OFF-2026/00001).</p>
         <div class="field"><label class="field-required" for="offre-prospect">Prospect</label><select id="offre-prospect"></select></div>
         <div class="field"><label for="offre-titre">Titre / besoin exprimé</label><input type="text" id="offre-titre"></div>
+        <div class="field"><label for="offre-source">Source (d'où vient l'offre ?)</label>
+          <select id="offre-source">
+            <option value="site_web">Site web</option>
+            <option value="telephone">Appel téléphonique</option>
+            <option value="recommandation">Recommandation</option>
+            <option value="salon">Salon / événement</option>
+            <option value="reseaux_sociaux">Réseaux sociaux</option>
+            <option value="publicite">Publicité</option>
+            <option value="autre">Autre</option>
+          </select>
+        </div>
+        <div class="field"><label for="offre-type-projet">Type de projet</label>
+          <select id="offre-type-projet">
+            <option value="chantier">Chantier</option>
+            <option value="sav">SAV / Dépannage</option>
+            <option value="autre">Autre</option>
+          </select>
+        </div>
+        <div class="field"><label for="offre-etape">Étape du pipeline</label>
+          <select id="offre-etape">
+            <option value="nouveau">Nouveau</option>
+            <option value="qualifie">Offre à faire</option>
+            <option value="offre_envoyee">Offre envoyée</option>
+            <option value="negociation">Négociation</option>
+            <option value="gagnee">Gagné</option>
+          </select>
+        </div>
         <div class="field"><label for="offre-htva">Montant HTVA (€)</label><input type="number" id="offre-htva" step="0.01" placeholder="ex. 15000"></div>
         <div class="field"><label for="offre-tva">Taux de TVA</label>
           <select id="offre-tva"><option value="21">21 %</option><option value="12">12 %</option><option value="6">6 %</option><option value="0">0 %</option></select>
@@ -361,7 +388,7 @@
         <h2>Clôturer l'offre</h2>
         <p class="required-note">L'offre reste visible dans les statistiques (taux de réussite), elle ne sera juste plus active dans le pipeline.</p>
         <div class="field"><label for="cloture-statut">Résultat</label>
-          <select id="cloture-statut"><option value="perdue">Perdue</option><option value="abandonnee">Abandonnée</option></select>
+          <select id="cloture-statut"><option value="disqualifiee">Disqualifiée (on ne répondra pas)</option><option value="perdue">Perdue</option><option value="abandonnee">Abandonnée</option></select>
         </div>
         <div class="field"><label class="field-required" for="cloture-motif">Motif</label><textarea id="cloture-motif" placeholder="ex. Prix trop élevé, concurrent choisi, projet reporté..."></textarea></div>
         <button class="btn btn-primary" id="btn-confirm-cloture">Confirmer la clôture</button>
@@ -392,6 +419,8 @@
         </div>
         <div class="field"><label for="prospect-email">Email</label><input type="email" id="prospect-email"></div>
         <div class="field"><label for="prospect-telephone">Téléphone</label><input type="tel" id="prospect-telephone"></div>
+        <div class="field"><label for="prospect-adresse">Adresse</label><input type="text" id="prospect-adresse" placeholder="rue et numéro"></div>
+        <div class="field"><label for="prospect-localite">Localité</label><input type="text" id="prospect-localite" placeholder="code postal et ville"></div>
         <div class="field"><label for="prospect-source">Source</label><input type="text" id="prospect-source" placeholder="site web, recommandation, salon..."></div>
         <div class="field"><label class="field-required" for="prospect-responsable">Responsable(s)</label><select id="prospect-responsable" multiple size="4"></select><p class="required-note">Plusieurs commerciaux possibles (Ctrl/Cmd + clic).</p></div>
         <div class="field"><label for="prospect-principal">Responsable principal</label><select id="prospect-principal"></select></div>

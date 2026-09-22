@@ -1,8 +1,23 @@
-# CRMAmseva — V01-036
+# CRMAmseva — V01-037
 
 CRM interne AM Seva : prospect → offre → devis multiples → facture → export CSV BOB.
 
-## 🆕 Corrections de cette version
+## 🎯 Refonte du pipeline commercial (processus décrit par Hélène le 18/09)
+
+- **Nouvelles étapes**, entièrement manuelles : Nouveau → Offre à faire → Offre envoyée → Négociation → Gagné. **Plus aucun avancement automatique** depuis les devis/commandes/factures — c'est toi qui décides quand une offre change d'étape.
+- **Glisser-déposer** : les cartes du Pipeline se déplacent maintenant à la souris d'une colonne à l'autre
+- **Étape modifiable directement dans la fiche** : le bouton "Modifier" d'une offre permet aussi de changer son étape (alternative au glisser-déposer)
+- **3 façons de clôturer négativement**, motif toujours obligatoire : **Disqualifiée** (on ne répondra pas, dès "Nouveau"), **Perdue** (après négociation), **Abandonnée**. Les 3 comptent dans les statistiques (taux de réussite)
+- **Nouveaux champs sur l'offre** : Source (d'où vient la demande) et Type de projet (Chantier / SAV-Dépannage / Autre)
+- **Nouveaux champs sur le prospect** : Adresse et Localité
+
+## ⏳ Points en attente (pas encore traités, sujet trop large pour cette passe)
+- Afficher le "fil d'actualité" (les Activités déjà existantes) directement sur la fiche de l'offre pendant la négociation
+- Rappel de relance après X jours en négociation — déjà possible techniquement (ajoute juste "negociation" dans les délais, Administration > Rappels), à valider ensemble
+- Distinguer clairement "commande SAV" vs "commande Chantier" avec une étape "Clôturer le chantier" avant facturation
+- Suivi des dépenses/achats liés à un projet (commande), en plus des heures déjà trackées (Mon pointage) — pour le reporting par projet
+
+## Corrections précédentes (V01-036)
 
 - **Icônes flottantes qui chevauchaient les boutons d'en-tête** ("+ Nouveau devis", etc.) sur toutes les pages : corrigé — l'espace en haut du contenu est maintenant réservé pour elles
 - **Noms de responsable non résolus** (UID brut affiché au lieu du nom) : la cause était un rafraîchissement manquant — les tableaux (Prospects, Pipeline, Leads, Devis, Commandes, Factures, Activités, Pointages) ne se remettaient pas à jour quand la liste des utilisateurs finissait de charger après eux. Corrigé : toutes ces vues se rafraîchissent maintenant automatiquement dès que les utilisateurs sont chargés

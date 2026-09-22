@@ -1,6 +1,6 @@
 # CRMAmseva — Modèle de données Firestore
 
-Version : V01-036
+Version : V01-037
 
 ## 🎯 Feuille de route fonctionnelle (cahier des charges d'Hélène)
 
@@ -109,7 +109,8 @@ Contact commercial **pas encore qualifié** — étape intermédiaire avant la c
 | nom / raisonSociale | string | |
 | type | `particulier` \| `entreprise` | |
 | tva | string | si entreprise |
-| adresse | map | rue, codePostal, ville, pays |
+| adresse | string | texte libre (rue + numéro) — champ simple, pas une map structurée |
+| localite | string | code postal + ville, texte libre |
 | email, telephone | string | |
 | source | string | site web, recommandation, salon... |
 | statut | `prospect` \| `client` | |
@@ -151,7 +152,9 @@ Message envoyé par un client depuis son portail.
 | responsablesUids | array | uids des commerciaux responsables — **plusieurs commerciaux possibles** sur une même offre |
 | responsablePrincipalUid | string | lequel des `responsablesUids` est désigné "principal" — modifiable à tout moment en rouvrant la fiche |
 | equipeIds | array | dénormalisé depuis les fiches des responsables |
-| statut | `en_cours` \| `gagnee` \| `perdue` \| `abandonnee` | |
+| statut | `en_cours` \| `gagnee` \| `perdue` \| `abandonnee` \| `disqualifiee` | "Disqualifiée" = on ne répondra pas à la demande (rejet immédiat, dès "Nouveau") ; "Perdue" = l'offre a été faite mais n'a pas abouti après négociation. Les 3 clôtures négatives exigent un motif obligatoire (bouton "Clôturer" sur la carte du Pipeline) |
+| source | string | d'où vient la demande — `site_web` \| `telephone` \| `recommandation` \| `salon` \| `reseaux_sociaux` \| `publicite` \| `autre` |
+| typeProjet | string | `chantier` \| `sav` \| `autre` — sert aussi à catégoriser la commande générée une fois l'offre gagnée |
 | raisonPerte | string | **motif obligatoire de clôture**, saisi via le bouton "Clôturer" sur la carte de l'offre (Pipeline) — l'offre disparaît du pipeline actif mais reste comptée dans le "Taux de réussite" (Reporting) |
 | leadOrigineId | string | présent si cette offre est née d'un lead converti |
 | montantHTVA, tauxTVA, montantTVA, montantTTC | number | saisi en HTVA + taux, TVA et TTC calculés en direct dans le formulaire |
@@ -178,7 +181,7 @@ Compteurs de numérotation automatique. `cle` = `offres_{année}`, `devis_{anné
 | dernier | number |
 | annee | number |
 
-**Étapes du pipeline** : `nouveau` → `qualifie` → `devis_envoye` → `devis_accepte` → `facture` → `client_actif`
+**Étapes du pipeline (revues le 18/09)** : `nouveau` → `qualifie` ("Offre à faire") → `offre_envoyee` → `negociation` → `gagnee`. Entièrement **manuel** — plus aucun avancement automatique depuis les devis/commandes/factures (Hélène veut garder la main, via glisser-déposer ou en modifiant directement la fiche offre). Une carte déplacée sur "Gagné" bascule aussi `statut` à `gagnee` automatiquement.
 Un rappel se déclenche automatiquement si une offre reste trop longtemps sans changement d'étape (délai configurable par étape, voir `parametres_rappels`).
 
 ### `devis/{id}`

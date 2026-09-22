@@ -1,6 +1,6 @@
 // ============================================================
 // Projet : CRMAmseva
-// Version : V01-036
+// Version : V01-037
 // Règles Firestore — authentification via Firebase Auth obligatoire.
 //
 // Rôles : superadmin, admin, direction, manager, commercial, travailleur
