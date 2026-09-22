@@ -64,8 +64,8 @@ function demarrerEcouteurs() {
 }
 
 const LABELS_ETAPE = {
-  nouveau: "Nouveau", qualifie: "Qualifié", devis_envoye: "Devis envoyé(s)",
-  devis_accepte: "Devis accepté", facture: "Facturé", client_actif: "Client actif",
+  nouveau: "Nouveau", qualifie: "Offre à faire", offre_envoyee: "Offre envoyée",
+  negociation: "Négociation", gagnee: "Gagné",
 };
 const LABELS_STATUT_DEVIS = { brouillon: "Brouillon", envoye: "Envoyé", accepte: "Accepté", refuse: "Refusé", expire: "Expiré" };
 const LABELS_PAIEMENT = { a_payer: "À payer", payee: "Payée", en_retard: "En retard" };

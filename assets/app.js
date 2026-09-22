@@ -3,13 +3,16 @@
 // Tableau de bord principal, connecté à Firestore en temps réel.
 // ============================================================
 
+// Étapes pilotées manuellement par glisser-déposer (plus d'avancement automatique
+// depuis les devis/commandes/factures) — reflète le processus commercial décrit
+// par Hélène : Nouveau → Offre à faire (qualifiée+attribuée) → Offre envoyée →
+// Négociation → Gagné (déclenche la création d'une commande, voir onglet Commandes).
 const STAGES = [
   { key: "nouveau", label: "Nouveau" },
-  { key: "qualifie", label: "Qualifié" },
-  { key: "devis_envoye", label: "Devis envoyé(s)" },
-  { key: "devis_accepte", label: "Devis accepté" },
-  { key: "facture", label: "Facturé" },
-  { key: "client_actif", label: "Client actif" },
+  { key: "qualifie", label: "Offre à faire" },
+  { key: "offre_envoyee", label: "Offre envoyée" },
+  { key: "negociation", label: "Négociation" },
+  { key: "gagnee", label: "Gagné" },
 ];
 
 const LABELS_STATUT_DEVIS = { brouillon: "Brouillon", envoye: "Envoyé", accepte: "Accepté", refuse: "Refusé", expire: "Expiré" };
@@ -233,6 +236,18 @@ function demarrerEcouteursFirestore() {
     USERS_DATA = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderUsers();
     remplirSelectsResponsables();
+    // Toutes les vues qui affichent un nom de responsable doivent se
+    // rafraîchir dès que la liste des utilisateurs est chargée/mise à jour —
+    // sinon elles gardent l'UID brut si elles se sont affichées avant elle.
+    renderProspects();
+    renderPipeline();
+    renderLeads();
+    renderDevis();
+    renderCommandes();
+    renderFactures();
+    renderActivites();
+    renderMesPointages();
+    renderToutesPointages();
   });
 }
 
@@ -301,8 +316,19 @@ function ouvrirDetailDevis(offreId, devisId) {
     ${d.raisonRefus ? ligneDetail("Motif de refus", d.raisonRefus) : ""}
     ${d.acceptationClient ? ligneDetail("Accepté par le client", d.acceptationClient.nom + " le " + dateToJsDate(d.acceptationClient.date).toLocaleDateString("fr-BE")) : ""}
     ${(d.documentationTechnique || []).map((doc) => ligneDetail("Note technique", doc.description)).join("")}
+    ${d.archive ? `<span class="tag tag-verrou" style="margin-top:12px; display:inline-block;">Archivé</span>` : ""}
+    <button class="btn btn-secondary" id="btn-modal-toggle-archive-devis" data-id="${d.id}" data-archive="${d.archive ? "1" : "0"}" style="margin-top:16px;">${d.archive ? "Désarchiver" : "Archiver"}</button>
   `;
   afficherModalDetail(contenu);
+  document.getElementById("btn-modal-toggle-archive-devis")?.addEventListener("click", async () => {
+    try {
+      await db.collection("devis").doc(devisId).update({ archive: !d.archive });
+      ouvrirDetailDevis(offreId, devisId);
+    } catch (err) {
+      console.error(err);
+      alert("Impossible de modifier l'archivage : " + (err.message || err.code || ""));
+    }
+  });
 }
 
 function ouvrirDetailFacture(factureId) {
@@ -392,8 +418,8 @@ document.getElementById("detail-modal-backdrop")?.addEventListener("click", (e) 
 });
 
 const LABELS_ETAPE_DETAIL = {
-  nouveau: "Nouveau", qualifie: "Qualifié", devis_envoye: "Devis envoyé(s)",
-  devis_accepte: "Devis accepté", facture: "Facturé", client_actif: "Client actif",
+  nouveau: "Nouveau", qualifie: "Offre à faire", offre_envoyee: "Offre envoyée",
+  negociation: "Négociation", gagnee: "Gagné",
 };
 
 // Délégation d'événements : fonctionne même si les liens sont regénérés à chaque rendu
@@ -408,18 +434,37 @@ document.addEventListener("click", (e) => {
   if (lienFacture) { e.preventDefault(); ouvrirDetailFacture(lienFacture.dataset.id); return; }
 });
 
+// Déplace une offre vers une étape par glisser-déposer — 100% manuel, gère
+// aussi le cas "Gagné" (marque l'offre comme gagnée pour les statistiques)
+async function deplacerOffreVersEtape(offreId, nouvelleEtape) {
+  const offre = getOffre(offreId);
+  if (!offre || offre.etapePipeline === nouvelleEtape) return;
+  const donnees = {
+    etapePipeline: nouvelleEtape,
+    historiqueEtapes: firebase.firestore.FieldValue.arrayUnion({ etape: nouvelleEtape, date: firebase.firestore.Timestamp.now() }),
+  };
+  if (nouvelleEtape === "gagnee") donnees.statut = "gagnee";
+  try {
+    await db.collection("offres").doc(offreId).update(donnees);
+  } catch (err) {
+    console.error(err);
+    alert("Impossible de déplacer cette offre : " + (err.message || err.code || ""));
+  }
+}
+
 function renderPipeline() {
   const board = document.getElementById("pipeline-board");
   if (!board) return;
   board.innerHTML = "";
 
-  let totalOffres = 0, devisEnvoyes = 0, clientsActifs = 0, rappelsEnRetard = 0;
-  STAT_DETAILS = { retard: [], encours: [], devisenvoyes: [], clientsactifs: [] };
+  let totalOffres = 0, clientsActifs = 0, rappelsEnRetard = 0;
+  const devisEnvoyes = DEVIS_DATA.filter((d) => d.statut === "envoye").length;
+  STAT_DETAILS = { retard: [], encours: [], devisenvoyes: DEVIS_DATA.filter((d) => d.statut === "envoye"), clientsactifs: [] };
 
   STAGES.forEach((stage, i) => {
-    const offresForStage = OFFRES_DATA.filter((o) => o.etapePipeline === stage.key && o.statut !== "perdue" && o.statut !== "abandonnee");
-    if (stage.key !== "client_actif") { totalOffres += offresForStage.length; STAT_DETAILS.encours.push(...offresForStage); }
-    if (stage.key === "client_actif") { clientsActifs = offresForStage.length; STAT_DETAILS.clientsactifs.push(...offresForStage); }
+    const offresForStage = OFFRES_DATA.filter((o) => o.etapePipeline === stage.key && !["perdue", "abandonnee", "disqualifiee"].includes(o.statut));
+    if (stage.key !== "gagnee") { totalOffres += offresForStage.length; STAT_DETAILS.encours.push(...offresForStage); }
+    if (stage.key === "gagnee") { clientsActifs = offresForStage.length; STAT_DETAILS.clientsactifs.push(...offresForStage); }
 
     const col = document.createElement("div");
     col.className = "pipeline-stage";
@@ -429,17 +474,22 @@ function renderPipeline() {
         <span>${stage.label}</span>
         <span class="stage-count">${offresForStage.length}</span>
       </div>
-      <div class="stage-cards"></div>
+      <div class="stage-cards" data-etape="${stage.key}"></div>
     `;
     const cardsWrap = col.querySelector(".stage-cards");
+    cardsWrap.addEventListener("dragover", (e) => { e.preventDefault(); cardsWrap.classList.add("drop-hover"); });
+    cardsWrap.addEventListener("dragleave", () => cardsWrap.classList.remove("drop-hover"));
+    cardsWrap.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      cardsWrap.classList.remove("drop-hover");
+      const offreId = e.dataTransfer.getData("text/offre-id");
+      if (!offreId) return;
+      await deplacerOffreVersEtape(offreId, stage.key);
+    });
 
     offresForStage.forEach((o) => {
       const devisPourOffre = DEVIS_DATA.filter((d) => d.offreId === o.id);
       const devisCount = devisPourOffre.length;
-      if (stage.key === "devis_envoye") {
-        devisEnvoyes += devisCount;
-        STAT_DETAILS.devisenvoyes.push(...devisPourOffre.filter((d) => d.statut === "envoye"));
-      }
 
       const historique = o.historiqueEtapes || [];
       const derniere = historique.length ? dateToJsDate(historique[historique.length - 1].date) : null;
@@ -450,6 +500,7 @@ function renderPipeline() {
 
       const card = document.createElement("div");
       card.className = "card-offre";
+      card.draggable = true;
       card.innerHTML = `
         <div class="offre-ref"><a href="#" class="lien-doc lien-offre" data-id="${o.id}">${o.numero || o.id}</a></div>
         <div class="offre-prospect">${getProspectNom(o.prospectId)}</div>
@@ -460,6 +511,11 @@ function renderPipeline() {
           <button class="btn btn-secondary btn-close-offre" data-id="${o.id}" style="padding:4px 8px;font-size:11px;">Clôturer</button>
         </div>
       `;
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/offre-id", o.id);
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => card.classList.remove("dragging"));
       card.querySelector(".btn-edit-offre").addEventListener("click", () => ouvrirFormOffre(o.id));
       card.querySelector(".btn-close-offre").addEventListener("click", () => ouvrirFormClotureOffre(o.id));
       cardsWrap.appendChild(card);
@@ -854,7 +910,7 @@ function renderNotifications() {
 
   // ---- Offres en retard à une étape du pipeline ----
   OFFRES_DATA.forEach((o) => {
-    if (o.statut !== "en_cours" || o.etapePipeline === "client_actif") return;
+    if (o.statut !== "en_cours" || o.etapePipeline === "gagnee") return;
     const historique = o.historiqueEtapes || [];
     const derniere = historique.length ? dateToJsDate(historique[historique.length - 1].date) : null;
     const delai = DELAIS_DATA[o.etapePipeline];
@@ -957,15 +1013,15 @@ function renderReporting() {
   const kpiWrap = document.getElementById("reporting-kpis");
   if (!kpiWrap) return;
 
-  const offresOuvertes = OFFRES_DATA.filter((o) => !["client_actif"].includes(o.etapePipeline) && o.statut === "en_cours");
+  const offresOuvertes = OFFRES_DATA.filter((o) => !["gagnee"].includes(o.etapePipeline) && o.statut === "en_cours");
   const pipelineTotal = offresOuvertes.reduce((sum, o) => sum + (o.montantEstime || 0), 0);
   const revenuPondere = offresOuvertes.reduce((sum, o) => sum + (o.montantEstime || 0) * ((o.probabilite || 0) / 100), 0);
   const leadsConvertis = LEADS_DATA.filter((l) => l.statut === "converti").length;
   const tauxConversion = LEADS_DATA.length ? Math.round((leadsConvertis / LEADS_DATA.length) * 100) : 0;
 
-  // Taux de réussite : offres gagnées (client_actif) vs clôturées perdues/abandonnées.
+  // Taux de réussite : offres gagnées (gagnee) vs clôturées perdues/abandonnées.
   // Les offres encore en cours ne comptent pas — seules les offres "terminées" (dans un sens ou dans l'autre) sont prises en compte.
-  const offresGagnees = OFFRES_DATA.filter((o) => o.etapePipeline === "client_actif").length;
+  const offresGagnees = OFFRES_DATA.filter((o) => o.etapePipeline === "gagnee").length;
   const offresPerdues = OFFRES_DATA.filter((o) => ["perdue", "abandonnee"].includes(o.statut)).length;
   const totalTerminees = offresGagnees + offresPerdues;
   const tauxReussite = totalTerminees ? Math.round((offresGagnees / totalTerminees) * 100) : null;
@@ -1027,7 +1083,7 @@ function renderReporting() {
       const leadsUid = LEADS_DATA.filter((l) => (l.responsablesUids || []).includes(u.id));
       const convertisUid = leadsUid.filter((l) => l.statut === "converti").length;
       const tauxUid = leadsUid.length ? Math.round((convertisUid / leadsUid.length) * 100) : 0;
-      const offresGagnees = OFFRES_DATA.filter((o) => (o.responsablesUids || []).includes(u.id) && o.etapePipeline === "client_actif");
+      const offresGagnees = OFFRES_DATA.filter((o) => (o.responsablesUids || []).includes(u.id) && o.etapePipeline === "gagnee");
       const caGagne = offresGagnees.reduce((sum, o) => sum + (o.montantEstime || 0), 0);
       return `
         <tr>
@@ -1594,7 +1650,7 @@ let prospectEnEdition = null;
 document.getElementById("btn-new-prospect")?.addEventListener("click", () => {
   prospectEnEdition = null;
   document.getElementById("prospect-form-titre").textContent = "Nouveau prospect";
-  ["prospect-nom", "prospect-email", "prospect-telephone", "prospect-source"].forEach((id) => (document.getElementById(id).value = ""));
+  ["prospect-nom", "prospect-email", "prospect-telephone", "prospect-adresse", "prospect-localite", "prospect-source"].forEach((id) => (document.getElementById(id).value = ""));
   document.getElementById("prospect-type").value = "entreprise";
   document.getElementById("form-new-prospect").style.display = "block";
   const respSelect = document.getElementById("prospect-responsable");
@@ -1610,6 +1666,8 @@ function ouvrirFormProspect(prospectId) {
   document.getElementById("prospect-type").value = p.type || "entreprise";
   document.getElementById("prospect-email").value = p.email || "";
   document.getElementById("prospect-telephone").value = p.telephone || "";
+  document.getElementById("prospect-adresse").value = p.adresse || "";
+  document.getElementById("prospect-localite").value = p.localite || "";
   document.getElementById("prospect-source").value = p.source || "";
   const respSelect = document.getElementById("prospect-responsable");
   [...respSelect.options].forEach((o) => (o.selected = (p.responsablesUids || []).includes(o.value)));
@@ -1630,6 +1688,8 @@ document.getElementById("btn-save-prospect")?.addEventListener("click", async ()
     type: document.getElementById("prospect-type").value,
     email: document.getElementById("prospect-email").value,
     telephone: document.getElementById("prospect-telephone").value,
+    adresse: document.getElementById("prospect-adresse").value,
+    localite: document.getElementById("prospect-localite").value,
     source: document.getElementById("prospect-source").value,
     responsablesUids,
     equipeIds,
@@ -1656,6 +1716,9 @@ document.getElementById("btn-new-offre")?.addEventListener("click", () => {
   offreEnEdition = null;
   document.getElementById("offre-form-titre").textContent = "Nouvelle offre";
   document.getElementById("offre-titre").value = "";
+  document.getElementById("offre-source").value = "site_web";
+  document.getElementById("offre-type-projet").value = "chantier";
+  document.getElementById("offre-etape").value = "nouveau";
   document.getElementById("offre-htva").value = "";
   document.getElementById("offre-tva").value = "21";
   document.getElementById("offre-probabilite").value = "50";
@@ -1752,6 +1815,9 @@ function ouvrirFormOffre(offreId) {
   prospectSelect.innerHTML = PROSPECTS_DATA.map((p) => `<option value="${p.id}">${p.raisonSociale || p.nom}</option>`).join("");
   prospectSelect.value = o.prospectId;
   document.getElementById("offre-titre").value = o.titre || "";
+  document.getElementById("offre-source").value = o.source || "site_web";
+  document.getElementById("offre-type-projet").value = o.typeProjet || "chantier";
+  document.getElementById("offre-etape").value = o.etapePipeline || "nouveau";
   document.getElementById("offre-htva").value = o.montantHTVA || o.montantEstime || "";
   document.getElementById("offre-tva").value = o.tauxTVA ?? "21";
   document.getElementById("offre-probabilite").value = o.probabilite ?? 50;
@@ -1778,6 +1844,8 @@ document.getElementById("btn-save-offre")?.addEventListener("click", async () =>
 
   const donnees = {
     titre: document.getElementById("offre-titre").value,
+    source: document.getElementById("offre-source").value,
+    typeProjet: document.getElementById("offre-type-projet").value,
     prospectId,
     responsablesUids,
     equipeIds,
@@ -1792,6 +1860,12 @@ document.getElementById("btn-save-offre")?.addEventListener("click", async () =>
 
   try {
     if (offreEnEdition) {
+      const nouvelleEtape = document.getElementById("offre-etape").value;
+      if (nouvelleEtape !== offreEnEdition.etapePipeline) {
+        donnees.etapePipeline = nouvelleEtape;
+        donnees.historiqueEtapes = firebase.firestore.FieldValue.arrayUnion({ etape: nouvelleEtape, date: firebase.firestore.Timestamp.now() });
+        if (nouvelleEtape === "gagnee") donnees.statut = "gagnee";
+      }
       await db.collection("offres").doc(offreEnEdition.id).update(donnees);
     } else {
       const { annee, numero } = await genererNumeroAnnuel("offres", 5);
@@ -1823,7 +1897,9 @@ function remplirSelectOffres() {
 function renderDevis() {
   const tbody = document.querySelector("#devis-table tbody");
   if (!tbody) return;
-  tbody.innerHTML = DEVIS_DATA.map((d) => {
+  const voirArchives = document.getElementById("chk-voir-archives-devis")?.checked;
+  const liste = voirArchives ? DEVIS_DATA : DEVIS_DATA.filter((d) => !d.archive);
+  tbody.innerHTML = liste.map((d) => {
     const offre = getOffre(d.offreId);
     const commandeExistante = COMMANDES_DATA.find((c) => c.devisId === d.id);
     let colCommande = "—";
@@ -1831,20 +1907,35 @@ function renderDevis() {
     else if (d.statut === "accepte" && currentScope === "tout")
       colCommande = `<button class="btn btn-secondary btn-creer-commande" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Créer bon de commande</button>`;
     return `
-    <tr>
+    <tr${d.archive ? ' style="opacity:0.6;"' : ""}>
       <td><a href="#" class="lien-doc lien-devis" data-offre="${d.offreId}" data-devis="${d.id}">${d.reference || d.id}</a></td>
       <td>${offre ? (offre.numero || offre.id) : d.offreId}</td>
       <td>${offre ? getProspectNom(offre.prospectId) : "—"}</td>
       <td>${d.dateEmission ? dateToJsDate(d.dateEmission).toLocaleDateString("fr-BE") : "—"}</td>
       <td>${(d.totalTTC || 0).toFixed(2)} €</td>
-      <td><span class="tag ${d.statut === "accepte" ? "tag-client" : "tag-prospect"}">${LABELS_STATUT_DEVIS[d.statut] || d.statut}</span></td>
+      <td>
+        <span class="tag ${d.statut === "accepte" ? "tag-client" : "tag-prospect"}">${LABELS_STATUT_DEVIS[d.statut] || d.statut}</span>
+        ${d.archive ? '<span class="tag tag-verrou" style="margin-left:4px;">Archivé</span>' : ""}
+      </td>
       <td>${colCommande}</td>
       <td>${d.statut === "accepte" || d.statut === "refuse" ? (d.statut === "refuse" ? `<span class="tag tag-rupture" title="${d.raisonRefus || ""}">Refusé</span>` : "") : `
         <button class="btn btn-secondary btn-accept-devis" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Marquer accepté</button>
         <button class="btn btn-secondary btn-refuse-devis" data-offre="${d.offreId}" data-devis="${d.id}" style="padding:5px 10px;font-size:12px;">Refuser</button>
       `}</td>
+      <td><button class="btn btn-secondary btn-toggle-archive-devis" data-id="${d.id}" data-archive="${d.archive ? "1" : "0"}" style="padding:5px 10px;font-size:12px;">${d.archive ? "Désarchiver" : "Archiver"}</button></td>
     </tr>`;
   }).join("");
+
+  document.querySelectorAll(".btn-toggle-archive-devis").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await db.collection("devis").doc(btn.dataset.id).update({ archive: btn.dataset.archive !== "1" });
+      } catch (err) {
+        console.error(err);
+        alert("Impossible de modifier l'archivage : " + (err.message || err.code || ""));
+      }
+    });
+  });
 
   document.querySelectorAll(".btn-creer-commande").forEach((btn) => {
     btn.addEventListener("click", () => creerCommande(btn.dataset.offre, btn.dataset.devis));
@@ -1865,13 +1956,11 @@ function renderDevis() {
 
   document.querySelectorAll(".btn-accept-devis").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const { offre, devis } = btn.dataset;
+      const { devis } = btn.dataset;
       try {
         await db.collection("devis").doc(devis).update({ statut: "accepte" });
-        await db.collection("offres").doc(offre).update({
-          etapePipeline: "devis_accepte",
-          historiqueEtapes: firebase.firestore.FieldValue.arrayUnion({ etape: "devis_accepte", date: firebase.firestore.Timestamp.now() }),
-        });
+        // L'étape du pipeline n'avance plus automatiquement ici : c'est désormais
+        // entièrement manuel (glisser-déposer ou édition de la fiche offre).
       } catch (err) {
         console.error(err);
         alert("Impossible de marquer ce devis comme accepté.");
@@ -2117,18 +2206,16 @@ document.getElementById("btn-confirm-generer-facture")?.addEventListener("click"
       responsablesUids: commande.responsablesUids || devis?.responsablesUids || offre?.responsablesUids || [],
       equipeIds: commande.equipeIds || devis?.equipeIds || offre?.equipeIds || [],
     });
-    if (offre) {
-      await db.collection("offres").doc(commande.offreId).update({
-        etapePipeline: "facture",
-        historiqueEtapes: firebase.firestore.FieldValue.arrayUnion({ etape: "facture", date: firebase.firestore.Timestamp.now() }),
-      });
-    }
+    // L'étape du pipeline n'avance plus automatiquement ici : c'est désormais
+    // entièrement manuel (glisser-déposer ou édition de la fiche offre).
     document.getElementById("form-generer-facture").style.display = "none";
   } catch (err) {
     console.error(err);
     alert("Impossible de générer la facture : " + (err.message || err.code || ""));
   }
 });
+
+document.getElementById("chk-voir-archives-devis")?.addEventListener("change", renderDevis);
 
 document.getElementById("btn-new-devis")?.addEventListener("click", () => {
   if (OFFRES_DATA.length === 0) {
@@ -2470,7 +2557,7 @@ function renderRappels() {
 function renderDelais() {
   const wrap = document.getElementById("delays-config");
   if (!wrap) return;
-  const lignesEtapes = STAGES.filter((s) => s.key !== "client_actif").map((s) => `
+  const lignesEtapes = STAGES.filter((s) => s.key !== "gagnee").map((s) => `
     <div class="delay-row">
       <span>${s.label}</span>
       <span><input type="number" value="${DELAIS_DATA[s.key] ?? ""}" min="1" data-etape="${s.key}" class="delay-input"> jours</span>
